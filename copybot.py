@@ -24,7 +24,7 @@ POLL_INTERVAL  = 30
 TRADE_LOG      = Path(__file__).parent / "trades.json"
 SEEN_LOG       = Path(__file__).parent / ".seen_txns.json"
 POSITIONS_LOG  = Path(__file__).parent / ".positions.json"
-BULLPEN        = os.path.expanduser("~/.bullpen/bin/bullpen")
+BULLPEN        = os.environ.get("BULLPEN_BIN", os.path.expanduser("~/.bullpen/bin/bullpen"))
 
 # ── In-memory position tracker ────────────────────────────────────────────────
 # keyed by "slug::outcome" (lowercase) → True/False (we hold it)
