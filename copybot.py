@@ -10,6 +10,7 @@ import subprocess
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
@@ -19,12 +20,17 @@ TARGETS = [
     {"address": "0xbddf61af533ff524d27154e589d2d7a81510c684", "label": "bddf_Countryside"},
 ]
 
-TRADE_SIZE_USD = 2.0
-POLL_INTERVAL  = 30
-TRADE_LOG      = Path(__file__).parent / "trades.json"
-SEEN_LOG       = Path(__file__).parent / ".seen_txns.json"
-POSITIONS_LOG  = Path(__file__).parent / ".positions.json"
-BULLPEN        = os.environ.get("BULLPEN_BIN", os.path.expanduser("~/.bullpen/bin/bullpen"))
+TRADE_SIZE_USD    = 2.0
+POLL_INTERVAL     = 30
+TRADER_CHECK_SECS = 24 * 60 * 60   # check trader activity every 24 hours
+TRADE_LOG         = Path(__file__).parent / "trades.json"
+SEEN_LOG          = Path(__file__).parent / ".seen_txns.json"
+POSITIONS_LOG     = Path(__file__).parent / ".positions.json"
+TARGETS_LOG       = Path(__file__).parent / ".targets.json"
+BULLPEN           = os.environ.get("BULLPEN_BIN", os.path.expanduser("~/.bullpen/bin/bullpen"))
+
+# Minimum 7d volume to be considered active ($100k)
+MIN_VOLUME_7D = 100_000
 
 # ── In-memory position tracker ────────────────────────────────────────────────
 # keyed by "slug::outcome" (lowercase) → True/False (we hold it)
@@ -249,6 +255,99 @@ def fetch_trades(address: str) -> list:
         return []
 
 
+# ── Trader activity check & auto-rotation ────────────────────────────────────
+
+def get_last_trade_ts(address: str) -> Optional[str]:
+    """Return ISO timestamp of most recent trade for this address, or None."""
+    result = bullpen(
+        "polymarket", "activity",
+        "--address", address,
+        "--type", "trade",
+        "--limit", "1",
+        "--output", "json",
+    )
+    if result.returncode != 0:
+        return None
+    try:
+        activities = json.loads(result.stdout).get("activities", [])
+        if activities:
+            return activities[0].get("timestamp")
+    except Exception:
+        pass
+    return None
+
+
+def fetch_top_traders(limit: int = 50) -> list:
+    """Fetch leaderboard and return top active traders sorted by 7d PnL."""
+    result = bullpen(
+        "polymarket", "data", "leaderboard",
+        "--sort", "pnl",
+        "--time-period", "7d",
+        "--hide-bots", "--hide-farmers",
+        "--limit", str(limit),
+        "--output", "json",
+    )
+    if result.returncode != 0:
+        return []
+    try:
+        traders = json.loads(result.stdout).get("leaderboard", [])
+        # Filter by minimum volume
+        return [t for t in traders if (t.get("volume_7d") or 0) >= MIN_VOLUME_7D]
+    except Exception:
+        return []
+
+
+def check_and_rotate_traders(targets: list, seen: dict) -> list:
+    """Check each trader for activity in last 24h. Replace inactive ones."""
+    now = datetime.now(timezone.utc)
+    inactive = []
+
+    for t in targets:
+        last_ts = get_last_trade_ts(t["address"])
+        if last_ts is None:
+            print(f"[rotation] Could not check {t['label']} — skipping")
+            continue
+        try:
+            # Parse timestamp
+            ts_str = last_ts.replace("UTC", "+00:00").replace(" ", "T")
+            last_dt = datetime.fromisoformat(ts_str)
+            hours_ago = (now - last_dt).total_seconds() / 3600
+            if hours_ago > 24:
+                print(f"[rotation] {t['label']} inactive for {hours_ago:.1f}h — marking for replacement")
+                inactive.append(t["address"])
+            else:
+                print(f"[rotation] {t['label']} active — last trade {hours_ago:.1f}h ago ✅")
+        except Exception as e:
+            print(f"[rotation] Error parsing timestamp for {t['label']}: {e}")
+
+    if not inactive:
+        return targets
+
+    # Fetch fresh top traders
+    print(f"[rotation] Fetching new traders to replace {len(inactive)} inactive...")
+    top = fetch_top_traders(50)
+    current_addresses = {t["address"].lower() for t in targets}
+
+    new_targets = [t for t in targets if t["address"] not in inactive]
+
+    for trader in top:
+        addr = trader.get("wallet_address", "")
+        name = trader.get("display_name") or addr[:10]
+        if addr.lower() not in current_addresses and addr not in inactive:
+            label = f"{addr[:6]}_{name[:12]}"
+            new_targets.append({"address": addr, "label": label})
+            seen.setdefault(addr, [])
+            print(f"[rotation] ✅ Added new trader: {label} (7d PnL: ${trader.get('realized_pnl_7d', 0):,.0f})")
+            current_addresses.add(addr.lower())
+            if len(new_targets) >= len(targets):
+                break
+
+    # Save updated targets
+    save_json(TARGETS_LOG, new_targets)
+    print(f"[rotation] Targets updated: {[t['label'] for t in new_targets]}")
+    return new_targets
+
+
 # ── Main loop ─────────────────────────────────────────────────────────────────
 
 def main():
@@ -265,8 +364,13 @@ def main():
     print(f"Loaded {len(held_positions)} held position(s): {list(held_positions.keys()) or 'none'}\n")
 
     seen: dict = load_json(SEEN_LOG, {})
-    for t in TARGETS:
+
+    # Load saved targets or use defaults
+    targets = load_json(TARGETS_LOG, TARGETS)
+    for t in targets:
         seen.setdefault(t["address"], [])
+
+    last_rotation_check = time.time()
 
     while True:
         # ── Auto-redeem any resolved positions first ───────────────────────
@@ -275,7 +379,16 @@ def main():
         except Exception as e:
             print(f"[redeem error] {e}")
 
-        for target in TARGETS:
+        # ── Check trader activity every 24h and rotate if needed ───────────
+        if time.time() - last_rotation_check >= TRADER_CHECK_SECS:
+            print(f"[{now_iso()}] Running 24h trader activity check...")
+            try:
+                targets = check_and_rotate_traders(targets, seen)
+            except Exception as e:
+                print(f"[rotation error] {e}")
+            last_rotation_check = time.time()
+
+        for target in targets:
             addr  = target["address"]
             label = target["label"]
             try:
