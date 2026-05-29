@@ -1,13 +1,11 @@
 #!/bin/bash
-set -e
 
-export HOME=/root
-export PATH="$HOME/.bullpen/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
+export PATH="/root/.bullpen/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
 
 # Install bullpen CLI
 echo "Installing bullpen CLI..."
 curl -fsSL https://cli.bullpen.fi/install.sh | sh
-export PATH="$HOME/.bullpen/bin:$PATH"
+export PATH="/root/.bullpen/bin:$HOME/.bullpen/bin:$PATH"
 
 # Restore credentials
 mkdir -p ~/.bullpen/keys
