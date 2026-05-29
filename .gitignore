@@ -1,0 +1,7 @@
+.seen_txns.json
+.positions.json
+trades.json
+*.log
+__pycache__/
+.env
+credentials.json
