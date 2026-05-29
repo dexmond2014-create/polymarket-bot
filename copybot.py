@@ -19,7 +19,7 @@ TARGETS = [
     {"address": "0xbddf61af533ff524d27154e589d2d7a81510c684", "label": "bddf_Countryside"},
 ]
 
-TRADE_SIZE_USD = 4.0
+TRADE_SIZE_USD = 2.0
 POLL_INTERVAL  = 30
 TRADE_LOG      = Path(__file__).parent / "trades.json"
 SEEN_LOG       = Path(__file__).parent / ".seen_txns.json"
