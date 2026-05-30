@@ -37,7 +37,7 @@ TARGETS = [
     {"address": "0x6A72f61820b26b1fe4d956E17B6DC2A1Ea3033EE", "label": "kch123"},
 ]
 
-TRADE_SIZE_USD    = 4.0
+TRADE_SIZE_USD    = 3.0
 POLL_INTERVAL     = 30
 TRADER_CHECK_SECS = 24 * 60 * 60   # check trader activity every 24 hours
 TRADE_LOG         = Path(__file__).parent / "trades.json"
