@@ -1,2 +1,1 @@
-# No external dependencies — uses Python stdlib only
-# bullpen CLI is installed via install script
+# No external dependencies
