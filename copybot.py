@@ -14,6 +14,14 @@ from typing import Optional
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
+# Slugs containing these keywords will be skipped (long-term futures)
+SKIP_SLUG_KEYWORDS = [
+    "win-the-2026-fifa-world-cup",
+    "win-the-world-cup",
+    "world-cup-winner",
+    "world-cup-champion",
+]
+
 TARGETS = [
     {"address": "0xf284ad6d607f777f34bc643cea587c33a886b9f9", "label": "f284_strike123"},
     {"address": "0x5966db1fe50763c9e3c014d756369bad07e1f804", "label": "5966_unknown"},
@@ -410,6 +418,18 @@ def main():
                 side    = trade.get("side", "").upper()
 
                 if not slug or not outcome:
+                    seen_set.add(txn)
+                    continue
+
+                # Skip long-term futures (World Cup winners etc)
+                if any(kw in slug for kw in SKIP_SLUG_KEYWORDS):
+                    print(f"  [skip] {side} {outcome} on {slug} — long-term future, skipping")
+                    log_trade({
+                        "ts": now_iso(), "action": f"{side}_SKIPPED",
+                        "slug": slug, "outcome": outcome,
+                        "copied_from": label, "copied_txn": txn,
+                        "status": "long_term_future", "error": None,
+                    })
                     seen_set.add(txn)
                     continue
 
