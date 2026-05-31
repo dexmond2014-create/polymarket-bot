@@ -437,12 +437,12 @@ def main():
 
                 key = pos_key(slug, outcome)
 
-                # Check daily trade limit
+                # Check daily trade limit per trader
                 today = now_iso()[:10]
                 trades_today = load_json(TRADE_LOG, [])
-                buys_today = [t for t in trades_today if t.get('action') == 'BUY' and t.get('status') == 'filled' and t.get('ts','')[:10] == today]
-                if len(buys_today) >= MAX_TRADES_PER_DAY:
-                    print(f"  [limit] Daily trade limit of {MAX_TRADES_PER_DAY} reached — skipping {side} {outcome} on {slug}")
+                buys_today_trader = [t for t in trades_today if t.get('action') == 'BUY' and t.get('status') == 'filled' and t.get('ts','')[:10] == today and t.get('copied_from') == label]
+                if len(buys_today_trader) >= MAX_TRADES_PER_DAY:
+                    print(f"  [limit] {label} daily limit of {MAX_TRADES_PER_DAY} reached — skipping {side} {outcome} on {slug}")
                     seen_set.add(txn)
                     continue
 
