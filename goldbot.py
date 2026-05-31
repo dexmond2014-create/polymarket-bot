@@ -9,7 +9,8 @@ Gold (XAU/USD) Trading Bot — MT5
 
 import time
 import json
-from datetime import datetime, timezone
+import requests
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 try:
@@ -37,7 +38,19 @@ POLL_INTERVAL    = 60             # Check every 60 seconds
 TRADE_START_H    = 8              # Start trading 8am UTC
 TRADE_END_H      = 22             # Stop trading 10pm UTC
 
-LOG_FILE = Path(__file__).parent / "gold_trades.json"
+LOG_FILE       = Path(__file__).parent / "gold_trades.json"
+NEWS_CACHE     = Path(__file__).parent / ".news_cache.json"
+
+# News pause window (minutes before and after high-impact news)
+NEWS_PAUSE_BEFORE = 30   # pause 30 min before news
+NEWS_PAUSE_AFTER  = 30   # pause 30 min after news
+
+# High-impact keywords to watch for gold
+GOLD_NEWS_KEYWORDS = [
+    "non-farm", "nfp", "fed", "fomc", "interest rate", "cpi", "inflation",
+    "gdp", "powell", "jobless", "unemployment", "pce", "retail sales",
+    "ism", "pmi", "treasury", "debt ceiling", "rate decision"
+]
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -74,6 +87,94 @@ def get_daily_loss():
         and t.get("profit_usd", 0) < 0
     ]
     return sum(losses)
+
+# ── News filter ──────────────────────────────────────────────────────────────
+
+def fetch_news_events():
+    """Fetch high-impact economic events from ForexFactory API."""
+    try:
+        cache = load_json(NEWS_CACHE, {})
+        now   = datetime.now(timezone.utc)
+
+        # Refresh cache every 4 hours
+        last_fetch = cache.get("fetched_at", "")
+        if last_fetch:
+            last_dt = datetime.fromisoformat(last_fetch)
+            if (now - last_dt).total_seconds() < 14400:
+                return cache.get("events", [])
+
+        # ForexFactory calendar API
+        date_str = now.strftime("%b%d.%Y").lower()
+        r = requests.get(
+            f"https://nfs.faireconomy.media/ff_calendar_thisweek.json",
+            timeout=10,
+            headers={"User-Agent": "Mozilla/5.0"}
+        )
+        if r.status_code == 200:
+            all_events = r.json()
+            # Filter HIGH impact USD events only
+            high_impact = []
+            for event in all_events:
+                if event.get("impact") != "High":
+                    continue
+                if event.get("country") not in ["USD", "US"]:
+                    continue
+                title = (event.get("title") or "").lower()
+                if any(kw in title for kw in GOLD_NEWS_KEYWORDS):
+                    high_impact.append({
+                        "title": event.get("title"),
+                        "date":  event.get("date"),
+                        "time":  event.get("time"),
+                        "impact": event.get("impact"),
+                    })
+
+            cache = {"fetched_at": now.isoformat(), "events": high_impact}
+            save_json(NEWS_CACHE, cache)
+            print(f"  [news] Fetched {len(high_impact)} high-impact events this week")
+            return high_impact
+
+    except Exception as e:
+        print(f"  [news] Could not fetch calendar: {e}")
+
+    return []
+
+def is_news_time():
+    """
+    Returns (paused: bool, reason: str)
+    Pauses trading 30 min before and 30 min after high-impact news.
+    """
+    events = fetch_news_events()
+    now    = datetime.now(timezone.utc)
+
+    for event in events:
+        try:
+            # Parse event datetime
+            date_str  = event.get("date", "")
+            time_str  = event.get("time", "")
+            if not date_str or not time_str:
+                continue
+
+            event_dt = datetime.strptime(
+                f"{date_str} {time_str}", "%m-%d-%Y %I:%M%p"
+            ).replace(tzinfo=timezone.utc)
+
+            # Check if we're within the pause window
+            before = event_dt - timedelta(minutes=NEWS_PAUSE_BEFORE)
+            after  = event_dt + timedelta(minutes=NEWS_PAUSE_AFTER)
+
+            if before <= now <= after:
+                title = event.get("title", "News")
+                if now < event_dt:
+                    mins = int((event_dt - now).total_seconds() / 60)
+                    return True, f"⏸ {title} in {mins} min"
+                else:
+                    mins = int((now - event_dt).total_seconds() / 60)
+                    return True, f"⏸ {title} was {mins} min ago"
+
+        except Exception:
+            continue
+
+    return False, ""
 
 # ── MT5 connection ────────────────────────────────────────────────────────────
 
@@ -271,6 +372,13 @@ def main():
 
             if not trading_hrs:
                 print(f"  [hours] Outside trading hours ({TRADE_START_H}-{TRADE_END_H} UTC)")
+                time.sleep(POLL_INTERVAL)
+                continue
+
+            # News filter — pause around high-impact events
+            paused, news_reason = is_news_time()
+            if paused:
+                print(f"  [news] Paused — {news_reason}")
                 time.sleep(POLL_INTERVAL)
                 continue
 
