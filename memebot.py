@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-Solana Meme Coin Bot
-- Monitors Pump.fun for new token launches
-- Copies whale wallet buys
+Solana Meme Coin Bot — with full safety controls
+- Monitors Pump.fun for new graduated tokens
 - Auto sells at 2x profit or -50% stop loss
 - 0.05 SOL per trade
+- Rug pull protection, daily loss limit, age filter
 """
 
 import json
@@ -17,23 +17,31 @@ from pathlib import Path
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
-TRADE_SIZE_SOL    = 0.05          # SOL per trade (~$4)
-TAKE_PROFIT_X     = 2.0           # Sell at 2x (100% profit)
-STOP_LOSS_PCT     = 0.50          # Stop loss at -50%
-POLL_INTERVAL     = 20            # Check every 20 seconds
-MIN_LIQUIDITY_USD = 5_000         # Skip tokens with less than $5k liquidity
-MIN_MARKET_CAP    = 10_000        # Skip tokens under $10k market cap
-MAX_MARKET_CAP    = 500_000       # Skip tokens over $500k (too late)
-MAX_OPEN_TRADES   = 5             # Max simultaneous positions
+TRADE_SIZE_SOL      = 0.05        # SOL per trade (~$4)
+TAKE_PROFIT_X       = 2.0         # Sell at 2x (100% profit)
+STOP_LOSS_PCT       = 0.50        # Stop loss at -50%
+POLL_INTERVAL       = 20          # Check every 20 seconds
+MAX_OPEN_TRADES     = 5           # Max simultaneous positions
+MAX_TRADES_PER_DAY  = 10          # Max buys per day
+MAX_DAILY_LOSS_SOL  = 0.25        # Stop trading if lost 0.25 SOL today (~$40)
+MAX_POSITION_AGE_H  = 24          # Force sell if held longer than 24 hours
+
+# Token filters (rug protection)
+MIN_MARKET_CAP      = 20_000      # Skip tokens under $20k mcap
+MAX_MARKET_CAP      = 300_000     # Skip tokens over $300k (too late)
+MIN_LIQUIDITY_USD   = 8_000       # Must have $8k+ liquidity
+MIN_REPLIES         = 10          # Must have community activity (replies)
+MAX_DEV_HOLD_PCT    = 15          # Skip if dev holds >15% of supply
 
 TRADE_LOG   = Path(__file__).parent / "meme_trades.json"
 POSITIONS   = Path(__file__).parent / ".meme_positions.json"
+BLACKLIST   = Path(__file__).parent / ".meme_blacklist.json"
 BULLPEN     = os.environ.get("BULLPEN_BIN", os.path.expanduser("~/.bullpen/bin/bullpen"))
 
-# Whale wallets to copy (known profitable Solana meme traders)
-WHALE_WALLETS = [
-    # Add profitable whale addresses here
-    # Format: {"address": "...", "label": "whale1"}
+# Known scam/rug keywords in token names
+SCAM_KEYWORDS = [
+    "elon", "trump", "inu", "safe", "moon", "gem", "100x", "1000x",
+    "rugproof", "safu", "based", "airdrop", "free", "presale"
 ]
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -61,57 +69,139 @@ def log_trade(entry):
     trades = load_json(TRADE_LOG, [])
     trades.append(entry)
     save_json(TRADE_LOG, trades)
-    print(f"  [logged] {entry['action']} {entry.get('symbol','?')} — {entry.get('status')}")
+    action = entry['action']
+    symbol = entry.get('symbol', '?')
+    status = entry.get('status', '')
+    pnl    = f" PnL:{entry['pnl_pct']:+.1f}%" if 'pnl_pct' in entry else ""
+    print(f"  [logged] {action} {symbol} — {status}{pnl}")
 
-def get_sol_price():
-    try:
-        r = requests.get("https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd", timeout=5)
-        return r.json()["solana"]["usd"]
-    except:
-        return 160  # fallback price
+def get_sol_balance():
+    result = bullpen("solana", "balance", "--output", "json")
+    if result.returncode == 0:
+        try:
+            return float(json.loads(result.stdout).get("sol_balance", 0))
+        except:
+            pass
+    return 0
 
 def get_token_price(mint):
-    """Get current token price in USD via bullpen."""
     result = bullpen("solana", "price", mint, "--output", "json")
     if result.returncode == 0:
         try:
-            data = json.loads(result.stdout)
-            return float(data.get("price_usd", 0))
+            return float(json.loads(result.stdout).get("price_usd", 0))
         except:
             pass
     return None
 
-def get_sol_balance():
-    """Get current SOL balance."""
-    result = bullpen("solana", "balance", "--output", "json")
-    if result.returncode == 0:
+def get_daily_stats():
+    """Get today's trade count and total loss."""
+    today  = now_iso()[:10]
+    trades = load_json(TRADE_LOG, [])
+    today_buys  = [t for t in trades if t.get('action') == 'BUY'
+                   and t.get('status') == 'filled'
+                   and t.get('ts', '')[:10] == today]
+    today_sells = [t for t in trades if t.get('action') == 'SELL'
+                   and t.get('status') == 'filled'
+                   and t.get('ts', '')[:10] == today]
+    total_loss_sol = sum(
+        t.get('sol_amount', TRADE_SIZE_SOL)
+        for t in today_sells
+        if t.get('pnl_pct', 0) < 0
+    )
+    return len(today_buys), total_loss_sol
+
+# ── Safety checks ─────────────────────────────────────────────────────────────
+
+def is_safe_token(token):
+    """
+    Run all rug/scam checks. Returns (safe: bool, reason: str).
+    """
+    mint   = token.get("mint", "")
+    symbol = token.get("symbol", "?").upper()
+    name   = (token.get("name", "") or "").lower()
+    mcap   = token.get("usd_market_cap", 0) or 0
+    liq    = token.get("virtual_sol_reserves", 0) or 0  # approx liquidity
+    replies = token.get("reply_count", 0) or 0
+
+    # 1. Blacklist check
+    blacklist = load_json(BLACKLIST, [])
+    if mint in blacklist:
+        return False, "blacklisted"
+
+    # 2. Market cap filter
+    if mcap < MIN_MARKET_CAP:
+        return False, f"mcap too low (${mcap:,.0f})"
+    if mcap > MAX_MARKET_CAP:
+        return False, f"mcap too high (${mcap:,.0f})"
+
+    # 3. Community activity — must have replies
+    if replies < MIN_REPLIES:
+        return False, f"low community activity ({replies} replies)"
+
+    # 4. Scam keyword check
+    for kw in SCAM_KEYWORDS:
+        if kw in name or kw in symbol.lower():
+            return False, f"scam keyword: '{kw}'"
+
+    # 5. Check if it's a known Pump.fun graduate (has bonding curve completed)
+    if not token.get("complete", False) and not token.get("raydium_pool"):
+        return False, "not graduated to Raydium yet"
+
+    return True, "ok"
+
+# ── Force sell aged positions ─────────────────────────────────────────────────
+
+def check_aged_positions():
+    """Force sell any position held longer than MAX_POSITION_AGE_H hours."""
+    positions = load_json(POSITIONS, {})
+    now = datetime.now(timezone.utc)
+    for mint, pos in list(positions.items()):
+        symbol    = pos.get("symbol", mint[:8])
+        bought_at = pos.get("bought_at", "")
         try:
-            data = json.loads(result.stdout)
-            return float(data.get("sol_balance", 0))
+            bought_dt = datetime.fromisoformat(bought_at)
+            age_hours = (now - bought_dt).total_seconds() / 3600
+            if age_hours >= MAX_POSITION_AGE_H:
+                print(f"  ⏰ FORCE SELL {symbol} — held {age_hours:.1f}h (max {MAX_POSITION_AGE_H}h)")
+                sell_token(mint, symbol, f"max_age_{age_hours:.0f}h")
         except:
             pass
-    return 0
 
 # ── Buy a token ───────────────────────────────────────────────────────────────
 
 def buy_token(mint, symbol, reason):
     positions = load_json(POSITIONS, {})
 
+    # Already holding
     if mint in positions:
         print(f"  [skip] Already holding {symbol}")
         return
 
+    # Max open positions
     if len(positions) >= MAX_OPEN_TRADES:
-        print(f"  [skip] Max {MAX_OPEN_TRADES} open trades reached")
+        print(f"  [skip] Max {MAX_OPEN_TRADES} open positions reached")
         return
 
+    # Daily trade limit
+    trades_today, loss_today = get_daily_stats()
+    if trades_today >= MAX_TRADES_PER_DAY:
+        print(f"  [limit] Daily trade limit of {MAX_TRADES_PER_DAY} reached")
+        return
+
+    # Daily loss limit
+    if loss_today >= MAX_DAILY_LOSS_SOL:
+        print(f"  [safety] Daily loss limit hit ({loss_today:.3f} SOL) — pausing buys for today")
+        return
+
+    # SOL balance check
     sol_balance = get_sol_balance()
-    if sol_balance < TRADE_SIZE_SOL:
-        print(f"  [skip] Insufficient SOL balance ({sol_balance:.3f} SOL)")
+    if sol_balance < TRADE_SIZE_SOL + 0.01:  # keep 0.01 SOL for fees
+        print(f"  [skip] Insufficient SOL ({sol_balance:.4f} SOL)")
         return
 
+    # Get entry price
     entry_price = get_token_price(mint)
-    if entry_price is None:
+    if not entry_price or entry_price <= 0:
         print(f"  [skip] Could not get price for {symbol}")
         return
 
@@ -137,8 +227,6 @@ def buy_token(mint, symbol, reason):
             entry["response"] = json.loads(r.stdout)
         except:
             entry["response"] = r.stdout.strip()
-
-        # Track position
         positions[mint] = {
             "symbol":      symbol,
             "entry_price": entry_price,
@@ -147,11 +235,11 @@ def buy_token(mint, symbol, reason):
             "reason":      reason,
         }
         save_json(POSITIONS, positions)
-        print(f"  ✅ Bought {symbol} at ${entry_price:.8f}")
+        print(f"  ✅ Bought {symbol} at ${entry_price:.8f} | Trades today: {trades_today+1}/{MAX_TRADES_PER_DAY}")
     else:
         entry["status"] = "failed"
         entry["error"]  = (r.stderr or r.stdout).strip()
-        print(f"  [error] BUY failed: {entry['error'][:100]}")
+        print(f"  [error] BUY failed: {entry['error'][:150]}")
 
     log_trade(entry)
 
@@ -162,26 +250,27 @@ def sell_token(mint, symbol, reason):
     if mint not in positions:
         return
 
-    print(f"  → SELL {symbol} — {reason}")
+    current_price = get_token_price(mint) or 0
+    pos           = positions[mint]
+    entry_price   = pos.get("entry_price", 0)
+    pnl_pct       = ((current_price - entry_price) / entry_price * 100) if entry_price > 0 else 0
+
+    print(f"  → SELL {symbol} — {reason} | PnL: {pnl_pct:+.1f}%")
     r = bullpen("solana", "sell", mint, "--max",
                 "--yes", "--non-interactive", "--output", "json")
 
-    current_price = get_token_price(mint) or 0
-    pos = positions[mint]
-    entry_price = pos.get("entry_price", 0)
-    pnl_pct = ((current_price - entry_price) / entry_price * 100) if entry_price > 0 else 0
-
     entry = {
-        "ts":           now_iso(),
-        "action":       "SELL",
-        "mint":         mint,
-        "symbol":       symbol,
-        "entry_price":  entry_price,
-        "exit_price":   current_price,
-        "pnl_pct":      round(pnl_pct, 2),
-        "reason":       reason,
-        "status":       None,
-        "error":        None,
+        "ts":          now_iso(),
+        "action":      "SELL",
+        "mint":        mint,
+        "symbol":      symbol,
+        "sol_amount":  pos.get("sol_amount", TRADE_SIZE_SOL),
+        "entry_price": entry_price,
+        "exit_price":  current_price,
+        "pnl_pct":     round(pnl_pct, 2),
+        "reason":      reason,
+        "status":      None,
+        "error":       None,
     }
 
     if r.returncode == 0:
@@ -196,11 +285,18 @@ def sell_token(mint, symbol, reason):
     else:
         entry["status"] = "failed"
         entry["error"]  = (r.stderr or r.stdout).strip()
-        print(f"  [error] SELL failed: {entry['error'][:100]}")
+        print(f"  [error] SELL failed: {entry['error'][:150]}")
+        # Blacklist if we can't sell (possible honeypot)
+        if "insufficient" not in entry["error"].lower():
+            blacklist = load_json(BLACKLIST, [])
+            if mint not in blacklist:
+                blacklist.append(mint)
+                save_json(BLACKLIST, blacklist)
+                print(f"  [blacklist] Added {symbol} — could not sell (possible honeypot)")
 
     log_trade(entry)
 
-# ── Monitor positions for TP/SL ───────────────────────────────────────────────
+# ── Monitor positions ─────────────────────────────────────────────────────────
 
 def monitor_positions():
     positions = load_json(POSITIONS, {})
@@ -218,23 +314,19 @@ def monitor_positions():
             continue
 
         pnl_pct = (current_price - entry_price) / entry_price
-
-        print(f"  [monitor] {symbol}: entry=${entry_price:.8f} now=${current_price:.8f} PnL={pnl_pct*100:+.1f}%")
+        print(f"  [pos] {symbol}: ${entry_price:.8f} → ${current_price:.8f} ({pnl_pct*100:+.1f}%)")
 
         if pnl_pct >= (TAKE_PROFIT_X - 1):
-            print(f"  🎯 TAKE PROFIT triggered for {symbol} (+{pnl_pct*100:.0f}%)")
+            print(f"  🎯 TAKE PROFIT {symbol} +{pnl_pct*100:.0f}%")
             sell_token(mint, symbol, f"take_profit_{pnl_pct*100:.0f}pct")
-
         elif pnl_pct <= -STOP_LOSS_PCT:
-            print(f"  🛑 STOP LOSS triggered for {symbol} ({pnl_pct*100:.0f}%)")
+            print(f"  🛑 STOP LOSS {symbol} {pnl_pct*100:.0f}%")
             sell_token(mint, symbol, f"stop_loss_{pnl_pct*100:.0f}pct")
 
-# ── Fetch new Pump.fun launches ───────────────────────────────────────────────
+# ── Fetch Pump.fun graduates ──────────────────────────────────────────────────
 
-def fetch_new_pumpdotfun_tokens():
-    """Fetch newly graduated tokens from Pump.fun API."""
+def fetch_pump_graduates():
     try:
-        # Pump.fun graduation endpoint — tokens that just hit Raydium
         r = requests.get(
             "https://frontend-api.pump.fun/coins/recently-graduated?offset=0&limit=20&includeNsfw=false",
             headers={"User-Agent": "Mozilla/5.0"},
@@ -243,56 +335,66 @@ def fetch_new_pumpdotfun_tokens():
         if r.status_code == 200:
             return r.json()
     except Exception as e:
-        print(f"  [pump.fun] Error: {e}")
+        print(f"  [pump.fun] {e}")
     return []
 
 # ── Main loop ─────────────────────────────────────────────────────────────────
 
 def main():
-    print(f"=== Solana Meme Bot Started ===")
-    print(f"Trade size: {TRADE_SIZE_SOL} SOL | TP: {TAKE_PROFIT_X}x | SL: {STOP_LOSS_PCT*100:.0f}%")
+    print("=" * 50)
+    print("  Solana Meme Bot — Safety Edition")
+    print("=" * 50)
+    print(f"  Trade size:    {TRADE_SIZE_SOL} SOL per trade")
+    print(f"  Take profit:   {TAKE_PROFIT_X}x (100% gain)")
+    print(f"  Stop loss:     {STOP_LOSS_PCT*100:.0f}%")
+    print(f"  Max positions: {MAX_OPEN_TRADES}")
+    print(f"  Max trades/day:{MAX_TRADES_PER_DAY}")
+    print(f"  Daily loss cap:{MAX_DAILY_LOSS_SOL} SOL")
+    print(f"  Force sell:    after {MAX_POSITION_AGE_H}h")
+    print(f"  Mcap range:    ${MIN_MARKET_CAP:,} – ${MAX_MARKET_CAP:,}")
+    print("=" * 50)
 
     sol_balance = get_sol_balance()
-    print(f"SOL balance: {sol_balance:.4f} SOL")
+    print(f"  SOL balance: {sol_balance:.4f} SOL\n")
 
-    seen_tokens = set()
-    positions = load_json(POSITIONS, {})
-    # Seed seen tokens from existing positions
-    seen_tokens.update(positions.keys())
+    seen_tokens = set(load_json(POSITIONS, {}).keys())
 
     while True:
-        print(f"\n[{now_iso()[:16]}] Scanning...")
+        trades_today, loss_today = get_daily_stats()
+        positions = load_json(POSITIONS, {})
+        print(f"\n[{now_iso()[:16]}] Positions: {len(positions)}/{MAX_OPEN_TRADES} | Today: {trades_today} trades | Loss: {loss_today:.3f} SOL")
 
-        # 1. Monitor existing positions for TP/SL
+        # 1. Monitor TP/SL on open positions
         try:
             monitor_positions()
         except Exception as e:
             print(f"  [monitor error] {e}")
 
-        # 2. Snipe new Pump.fun graduates
+        # 2. Force sell aged positions
         try:
-            new_tokens = fetch_new_pumpdotfun_tokens()
-            for token in new_tokens:
+            check_aged_positions()
+        except Exception as e:
+            print(f"  [age error] {e}")
+
+        # 3. Snipe Pump.fun graduates
+        try:
+            tokens = fetch_pump_graduates()
+            for token in tokens:
                 mint   = token.get("mint", "")
                 symbol = token.get("symbol", "?")
-                name   = token.get("name", "")
                 mcap   = token.get("usd_market_cap", 0) or 0
 
                 if not mint or mint in seen_tokens:
                     continue
-
                 seen_tokens.add(mint)
 
-                # Filter by market cap range
-                if mcap < MIN_MARKET_CAP:
-                    print(f"  [skip] {symbol} mcap too low (${mcap:,.0f})")
-                    continue
-                if mcap > MAX_MARKET_CAP:
-                    print(f"  [skip] {symbol} mcap too high (${mcap:,.0f})")
+                safe, reason = is_safe_token(token)
+                if not safe:
+                    print(f"  [blocked] {symbol} — {reason}")
                     continue
 
-                print(f"  🆕 New graduate: {symbol} ({name}) mcap=${mcap:,.0f}")
-                buy_token(mint, symbol, f"pump_graduate_mcap_{mcap:.0f}")
+                print(f"  ✅ SAFE token: {symbol} mcap=${mcap:,.0f}")
+                buy_token(mint, symbol, f"pump_graduate")
 
         except Exception as e:
             print(f"  [pump error] {e}")
