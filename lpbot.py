@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Jupiter/Meteora LP Auto-Rebalancing Bot
-- Monitors SOL/USDC concentrated liquidity position
+- Runs TWO pools: SOL/USDC + JUP/SOL
 - Auto-rebalances when price moves out of range
 - Auto-compounds fees back into position
 - ±15% range width, checks every 60 seconds
@@ -17,16 +17,36 @@ from pathlib import Path
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
-LP_SOL_AMOUNT       = 0.2          # SOL to put in LP (start small)
-RANGE_WIDTH_PCT     = 0.15         # ±15% range either side of current price
-REBALANCE_THRESHOLD = 0.02         # Rebalance if price within 2% of edge
-POLL_INTERVAL       = 60           # Check every 60 seconds
-MIN_FEES_TO_COMPOUND = 0.5         # Compound when fees > $0.50
-MAX_REBALANCES_PER_DAY = 5         # Max rebalances to avoid fee drain
+RANGE_WIDTH_PCT      = 0.15         # ±15% range either side of current price
+REBALANCE_THRESHOLD  = 0.02         # Rebalance if price within 2% of edge
+POLL_INTERVAL        = 60           # Check every 60 seconds
+MIN_FEES_TO_COMPOUND = 0.5          # Compound when fees > $0.50
+MAX_REBALANCES_PER_DAY = 5          # Max rebalances per pool per day
 
-# Token addresses
+# Two pools — each gets 0.15 SOL
+POOLS = [
+    {
+        "name":       "SOL/USDC",
+        "sol_amount": 0.15,
+        "base_mint":  "So11111111111111111111111111111111111111112",
+        "quote_mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        "price_id":   "SOL",
+        "state_file": ".lp_state_solusdc.json",
+    },
+    {
+        "name":       "JUP/SOL",
+        "sol_amount": 0.15,
+        "base_mint":  "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN",
+        "quote_mint": "So11111111111111111111111111111111111111112",
+        "price_id":   "JUP",
+        "state_file": ".lp_state_jupsol.json",
+    },
+]
+
+# Token addresses (kept for reference)
 SOL_MINT  = "So11111111111111111111111111111111111111112"
 USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+JUP_MINT  = "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN"
 
 # Files
 LOG_FILE  = Path(__file__).parent / "lp_log.json"
@@ -63,27 +83,31 @@ def log_event(event_type, details):
 
 # ── Price feeds ───────────────────────────────────────────────────────────────
 
-def get_sol_price():
-    """Get SOL price in USD from Jupiter Price API."""
+def get_token_price(price_id, mint=None):
+    """Get token price in USD from Jupiter Price API."""
     try:
         r = requests.get(
-            "https://price.jup.ag/v6/price?ids=SOL",
+            f"https://price.jup.ag/v6/price?ids={price_id}",
             timeout=10
         )
         if r.status_code == 200:
             data = r.json()
-            return float(data["data"]["SOL"]["price"])
+            return float(data["data"][price_id]["price"])
     except Exception as e:
-        print(f"  [price error] {e}")
+        pass
 
     # Fallback: use Bullpen
-    try:
-        result = bullpen("solana", "price", SOL_MINT, "--output", "json")
-        if result.returncode == 0:
-            return float(json.loads(result.stdout).get("price_usd", 0))
-    except:
-        pass
+    if mint:
+        try:
+            result = bullpen("solana", "price", mint, "--output", "json")
+            if result.returncode == 0:
+                return float(json.loads(result.stdout).get("price_usd", 0))
+        except:
+            pass
     return None
+
+def get_sol_price():
+    return get_token_price("SOL", SOL_MINT)
 
 def get_sol_balance():
     """Get SOL balance from Bullpen wallet."""
@@ -262,99 +286,91 @@ def rebalance(state, current_price, reason):
 
 # ── Main loop ─────────────────────────────────────────────────────────────────
 
+def run_pool(pool, cycle):
+    """Monitor and manage a single LP pool."""
+    name       = pool["name"]
+    price_id   = pool["price_id"]
+    base_mint  = pool["base_mint"]
+    sol_amount = pool["sol_amount"]
+    state_path = Path(__file__).parent / pool["state_file"]
+
+    current_price = get_token_price(price_id, base_mint)
+    if not current_price:
+        print(f"  [{name}] Could not get price")
+        return
+
+    state = load_json(state_path, {"active": False})
+
+    # Create position if none exists
+    if not state.get("active"):
+        sol_balance = get_sol_balance()
+        if sol_balance < sol_amount + 0.05:
+            print(f"  [{name}] Not enough SOL ({sol_balance:.4f})")
+            return
+        print(f"  [{name}] Opening position at ${current_price:.4f}...")
+        lower, upper = calculate_range(current_price)
+        success, position_id = create_lp_position(sol_amount, lower, upper)
+        if success:
+            state = {
+                "active":       True,
+                "position_id":  position_id,
+                "lower":        lower,
+                "upper":        upper,
+                "center_price": current_price,
+                "sol_amount":   sol_amount,
+                "entered_at":   now_iso(),
+                "rebalances":   0,
+            }
+            save_json(state_path, state)
+            log_event("opened", {"pool": name, "price": current_price, "lower": lower, "upper": upper})
+        return
+
+    lower    = state["lower"]
+    upper    = state["upper"]
+    pos      = price_position(current_price, lower, upper)
+    in_range = is_in_range(current_price, lower, upper)
+    status   = "✅" if in_range else "⚠️ OUT"
+
+    print(f"  [{name}] ${current_price:.4f} | range ${lower:.4f}-${upper:.4f} | {pos*100:.0f}% | {status}")
+
+    if not in_range:
+        reason = f"above ${upper:.4f}" if current_price > upper else f"below ${lower:.4f}"
+        new_state = rebalance(state, current_price, f"{name} {reason}")
+        save_json(state_path, new_state)
+    elif cycle % 360 == 0:
+        pid = state.get("position_id", "none")
+        if pid and pid not in ["none", "manual"]:
+            fees = collect_fees(pid)
+            if fees >= MIN_FEES_TO_COMPOUND:
+                log_event("compound", {"pool": name, "fees_usd": fees})
+
+
 def main():
     print("=" * 55)
-    print("  Jupiter LP Auto-Rebalancing Bot")
+    print("  Jupiter LP Auto-Rebalancing Bot — 2 Pools")
     print("=" * 55)
-    print(f"  Pair:          SOL/USDC")
-    print(f"  LP amount:     {LP_SOL_AMOUNT} SOL")
-    print(f"  Range width:   ±{RANGE_WIDTH_PCT*100:.0f}%")
+    for p in POOLS:
+        print(f"  Pool: {p['name']:12} | {p['sol_amount']} SOL | ±{RANGE_WIDTH_PCT*100:.0f}% range")
     print(f"  Rebalance at:  {REBALANCE_THRESHOLD*100:.0f}% from edge")
-    print(f"  Max rebal/day: {MAX_REBALANCES_PER_DAY}")
+    print(f"  Max rebal/day: {MAX_REBALANCES_PER_DAY} per pool")
     print(f"  Poll every:    {POLL_INTERVAL}s")
     print("=" * 55)
 
-    # Load existing state
-    state = load_json(STATE_FILE, {"active": False})
-
-    # Get initial price
-    current_price = get_sol_price()
-    if not current_price:
-        print("  [error] Could not get SOL price — retrying in 30s")
-        time.sleep(30)
-        current_price = get_sol_price()
-
-    print(f"  SOL price:     ${current_price:.2f}")
     sol_balance = get_sol_balance()
-    print(f"  SOL balance:   {sol_balance:.4f} SOL\n")
-
-    # Create initial position if none exists
-    if not state.get("active"):
-        print("  No active position — creating one now...")
-        lower, upper = calculate_range(current_price)
-
-        if sol_balance < LP_SOL_AMOUNT + 0.05:
-            print(f"  [error] Not enough SOL. Need {LP_SOL_AMOUNT + 0.05}, have {sol_balance:.4f}")
-        else:
-            success, position_id = create_lp_position(LP_SOL_AMOUNT, lower, upper)
-            if success:
-                state = {
-                    "active":       True,
-                    "position_id":  position_id,
-                    "lower":        lower,
-                    "upper":        upper,
-                    "center_price": current_price,
-                    "sol_amount":   LP_SOL_AMOUNT,
-                    "entered_at":   now_iso(),
-                    "rebalances":   0,
-                }
-                save_json(STATE_FILE, state)
-                log_event("opened", {
-                    "price": current_price,
-                    "lower": lower,
-                    "upper": upper,
-                    "sol":   LP_SOL_AMOUNT,
-                })
+    sol_price   = get_sol_price()
+    print(f"  SOL balance:   {sol_balance:.4f} SOL (~${sol_balance * (sol_price or 0):.2f})")
+    print(f"  SOL price:     ${sol_price:.2f}")
+    print(f"  Total LP size: {sum(p['sol_amount'] for p in POOLS)} SOL\n")
 
     cycle = 0
     while True:
         cycle += 1
-        current_price = get_sol_price()
-        if not current_price:
-            print(f"  [price error] Skipping cycle")
-            time.sleep(POLL_INTERVAL)
-            continue
-
-        state = load_json(STATE_FILE, {"active": False})
-
-        if not state.get("active"):
-            print(f"[{now_iso()[:16]}] No active position | SOL=${current_price:.2f}")
-            time.sleep(POLL_INTERVAL)
-            continue
-
-        lower = state["lower"]
-        upper = state["upper"]
-        pos   = price_position(current_price, lower, upper)
-        in_range = is_in_range(current_price, lower, upper)
-
-        status = "✅ IN RANGE" if in_range else "⚠️  OUT OF RANGE"
-        print(f"[{now_iso()[:16]}] SOL=${current_price:.2f} | Range ${lower:.2f}-${upper:.2f} | {pos*100:.0f}% | {status}")
-
-        # Rebalance if out of range
-        if not in_range:
-            if current_price > upper:
-                state = rebalance(state, current_price, f"price above range (${current_price:.2f} > ${upper:.2f})")
-            elif current_price < lower:
-                state = rebalance(state, current_price, f"price below range (${current_price:.2f} < ${lower:.2f})")
-
-        # Collect and compound fees every 6 hours (360 cycles at 60s)
-        elif cycle % 360 == 0:
-            position_id = state.get("position_id", "none")
-            if position_id and position_id not in ["none", "manual"]:
-                fees = collect_fees(position_id)
-                if fees >= MIN_FEES_TO_COMPOUND:
-                    log_event("compound", {"fees_usd": fees})
-
+        print(f"\n[{now_iso()[:16]}] — cycle {cycle}")
+        for pool in POOLS:
+            try:
+                run_pool(pool, cycle)
+            except Exception as e:
+                print(f"  [{pool['name']}] Error: {e}")
         time.sleep(POLL_INTERVAL)
 
 if __name__ == "__main__":
