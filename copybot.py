@@ -14,26 +14,18 @@ from typing import Optional
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
-# Slugs containing these keywords will be skipped
-# (sports bets = coin flips, world cup futures = too long term)
+# Slugs containing these keywords will be skipped (long-term futures only)
 SKIP_SLUG_KEYWORDS = [
-    # World Cup futures
     "win-the-2026-fifa-world-cup",
     "win-the-world-cup",
     "world-cup-winner",
     "world-cup-champion",
-    # Sports (too random, no edge)
-    "nba-", "mlb-", "nfl-", "nhl-",
-    "atp-", "wta-",
-    "cs2-", "esport",
-    "ufc-", "boxing-",
-    "soccer-", "ucl-", "epl-", "laliga-",
 ]
 
 TARGETS = [
-    # Top Polymarket traders by all-time PnL — focus on politics/news/crypto
-    {"address": "0x56687BF447DB6fFA42FFE2204a05EDAA20f55839", "label": "Theo4"},
-    {"address": "0x1F2DD6D473f3e824cd2f8A89d9c69fb96F6aD0CF", "label": "Fredi9999"},
+    # Top active traders by PnL — currently trading sports/FIFA
+    {"address": "0x204f72f35326db932158CBA6AdfF0B9A1DA95e14", "label": "swisstony"},
+    {"address": "0x2005D16a84CEEfa912D4e380cD32E7ff827875Ea", "label": "RN1"},
     {"address": "0x6A72f61820b26b1fe4d956E17B6DC2A1Ea3033EE", "label": "kch123"},
 ]
 
