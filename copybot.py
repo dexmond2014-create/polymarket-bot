@@ -23,11 +23,15 @@ SKIP_SLUG_KEYWORDS = [
 ]
 
 TARGETS = [
-    # Top active traders by PnL — currently trading sports/FIFA
-    {"address": "0x204f72f35326db932158CBA6AdfF0B9A1DA95e14", "label": "swisstony"},
-    {"address": "0x2005D16a84CEEfa912D4e380cD32E7ff827875Ea", "label": "RN1"},
-    {"address": "0x6A72f61820b26b1fe4d956E17B6DC2A1Ea3033EE", "label": "kch123"},
+    # Human political traders — research-based, not bots
+    {"address": "0x006cc834Cc092684F1B56626E23BEdB3835c16ea", "label": "UK_political"},  # Andy Burnham/UK elections trader $4.5M PnL
+    {"address": "0x2a2C53bD278c04DA9962Fcf96490E17F3DfB9Bc1", "label": "Norway_trader"},  # Political/news trader $4.2M PnL
+    {"address": "0x6A72f61820b26b1fe4d956E17B6DC2A1Ea3033EE", "label": "kch123"},         # Backup trader $4.7M PnL
 ]
+
+# Bot detection: if a trader fires this many trades within this many seconds = skip batch
+BOT_TRADES_THRESHOLD = 3
+BOT_TIME_WINDOW_SECS = 30
 
 TRADE_SIZE_USD    = 3.0
 MAX_TRADES_PER_DAY = 5              # max trades per day to protect balance
@@ -412,6 +416,25 @@ def main():
 
             if new_trades:
                 print(f"[{now_iso()}] {label}: {len(new_trades)} new trade(s)")
+
+            # Bot detection: skip batch if too many trades fired in a short window
+            if len(new_trades) >= BOT_TRADES_THRESHOLD:
+                try:
+                    timestamps = []
+                    for tr in new_trades[:BOT_TRADES_THRESHOLD]:
+                        ts = tr.get("timestamp", tr.get("ts", ""))
+                        dt = datetime.fromisoformat(ts.replace("UTC", "+00:00").replace(" ", "T"))
+                        timestamps.append(dt)
+                    timestamps.sort(reverse=True)
+                    window = (timestamps[0] - timestamps[-1]).total_seconds()
+                    if window <= BOT_TIME_WINDOW_SECS:
+                        print(f"  [bot-detect] {label} fired {len(new_trades)} trades in {window:.0f}s — looks like a bot, skipping batch")
+                        for tr in new_trades:
+                            seen_set.add(tr.get("transaction_hash", ""))
+                        seen[addr] = list(seen_set)
+                        continue
+                except Exception:
+                    pass
 
             for trade in new_trades:
                 txn     = trade.get("transaction_hash", "")
