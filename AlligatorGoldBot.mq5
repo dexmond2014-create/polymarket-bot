@@ -11,9 +11,9 @@
 
 //--- Inputs
 input double LotSize         = 0.01;   // Lot size per trade
-input int    StopLoss        = 30;     // Stop loss, in points
-input int    BreakevenProfit = 20;     // Move SL to breakeven after this many points of profit
-input int    RetraceProfit   = 20;     // Close trade if profit retraces this many points from its peak
+input int    StopLoss        = 8000;   // Stop loss, in points (gold: 30, crypto: 8000)
+input int    BreakevenProfit = 15000;  // Move SL to breakeven after this many points of profit (gold: 20, crypto: 15000)
+input int    RetraceProfit   = 5000;   // Close trade if profit retraces this many points from its peak (gold: 20, crypto: 5000)
 input bool   UseNewsFilter   = true;   // Pause new entries during news hours
 input int    MagicNumber     = 123456;
 input int    MaxTrades       = 2;      // Max simultaneous open positions for this EA
