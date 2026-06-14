@@ -87,17 +87,16 @@ void OnDeinit(const int reason)
 //+------------------------------------------------------------------+
 //| Expert tick function                                              |
 //+------------------------------------------------------------------+
-datetime g_lastBarTime = 0;
+datetime g_lastStatusTime = 0;
 
 void OnTick()
 {
    ManageOpenPositions();
 
-   // Print a status snapshot once per new 30M bar (for debugging)
-   datetime barTime = iTime(_Symbol, PERIOD_M30, 0);
-   if(barTime != g_lastBarTime)
+   // Print a status snapshot every 5 minutes of wall-clock time (for debugging)
+   if(TimeCurrent() - g_lastStatusTime >= 300)
    {
-      g_lastBarTime = barTime;
+      g_lastStatusTime = TimeCurrent();
       PrintAlligatorStatus();
    }
 
