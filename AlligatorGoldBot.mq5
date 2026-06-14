@@ -20,7 +20,7 @@ input int    MaxTrades       = 2;      // Max simultaneous open positions for th
 
 CTrade trade;
 
-int hAlligatorH1 = INVALID_HANDLE;
+int hAlligator30M = INVALID_HANDLE;
 int hAlligatorH4 = INVALID_HANDLE;
 int hAlligatorD1 = INVALID_HANDLE;
 int hAlligatorW1 = INVALID_HANDLE;
@@ -41,12 +41,12 @@ int OnInit()
    trade.SetExpertMagicNumber(MagicNumber);
    ConfigureFillingMode();
 
-   hAlligatorH1 = iAlligator(_Symbol, PERIOD_H1, 13, 8, 8, 5, 5, 3, MODE_SMMA, PRICE_MEDIAN);
+   hAlligator30M = iAlligator(_Symbol, PERIOD_M30, 13, 8, 8, 5, 5, 3, MODE_SMMA, PRICE_MEDIAN);
    hAlligatorH4 = iAlligator(_Symbol, PERIOD_H4, 13, 8, 8, 5, 5, 3, MODE_SMMA, PRICE_MEDIAN);
    hAlligatorD1 = iAlligator(_Symbol, PERIOD_D1, 13, 8, 8, 5, 5, 3, MODE_SMMA, PRICE_MEDIAN);
    hAlligatorW1 = iAlligator(_Symbol, PERIOD_W1, 13, 8, 8, 5, 5, 3, MODE_SMMA, PRICE_MEDIAN);
 
-   if(hAlligatorH1 == INVALID_HANDLE || hAlligatorH4 == INVALID_HANDLE ||
+   if(hAlligator30M == INVALID_HANDLE || hAlligatorH4 == INVALID_HANDLE ||
       hAlligatorD1 == INVALID_HANDLE || hAlligatorW1 == INVALID_HANDLE)
    {
       Print("Failed to create one or more Alligator indicator handles");
@@ -66,7 +66,7 @@ int OnInit()
 //+------------------------------------------------------------------+
 void OnDeinit(const int reason)
 {
-   if(hAlligatorH1 != INVALID_HANDLE) IndicatorRelease(hAlligatorH1);
+   if(hAlligator30M != INVALID_HANDLE) IndicatorRelease(hAlligator30M);
    if(hAlligatorH4 != INVALID_HANDLE) IndicatorRelease(hAlligatorH4);
    if(hAlligatorD1 != INVALID_HANDLE) IndicatorRelease(hAlligatorD1);
    if(hAlligatorW1 != INVALID_HANDLE) IndicatorRelease(hAlligatorW1);
@@ -161,8 +161,8 @@ void CheckAlligatorSetup()
    if(IsMajorNewsTime())
       return;
 
-   double jaw1H, teeth1H, lips1H;
-   if(!GetAlligator(hAlligatorH1, jaw1H, teeth1H, lips1H))
+   double jaw30M, teeth30M, lips30M;
+   if(!GetAlligator(hAlligator30M, jaw30M, teeth30M, lips30M))
       return;
 
    bool uptrend4H   = IsUptrendAlligator(hAlligatorH4);
@@ -176,16 +176,16 @@ void CheckAlligatorSetup()
    double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
    double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
 
-   if(bid > lips1H && uptrend4H && uptrendD1 && uptrendW1)
+   if(bid > lips30M && uptrend4H && uptrendD1 && uptrendW1)
    {
-      Print("BUY signal");
+      Print("BUY signal (30M entry, H4/D1/W1 confirmed)");
       OpenBuy();
       return;
    }
 
-   if(ask < lips1H && downtrend4H && downtrendD1 && downtrendW1)
+   if(ask < lips30M && downtrend4H && downtrendD1 && downtrendW1)
    {
-      Print("SELL signal");
+      Print("SELL signal (30M entry, H4/D1/W1 confirmed)");
       OpenSell();
    }
 }
