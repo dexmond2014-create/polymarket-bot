@@ -352,7 +352,10 @@ void ManageOpenPositions()
       if(g_positions[i].breakeven &&
          profitPoints < (g_positions[i].peakProfitPoints - RetraceProfit))
       {
-         trade.PositionClose(ticket);
+         if(trade.PositionClose(ticket))
+            PrintFormat("[exit] Closed ticket %I64u | peak profit %.1f pts, retraced by %.1f pts",
+                        ticket, g_positions[i].peakProfitPoints,
+                        (g_positions[i].peakProfitPoints - profitPoints));
          ArrayRemove(g_positions, i, 1);
       }
    }
