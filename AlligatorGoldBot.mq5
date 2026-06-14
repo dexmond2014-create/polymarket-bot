@@ -19,14 +19,14 @@ input int    MagicNumber     = 123456;
 input int    MaxTrades       = 2;      // Max simultaneous open positions for this EA
 
 input bool   RequireH4 = true;   // Require H4 Alligator trend confirmation
-input bool   RequireD1 = true;   // Require Daily Alligator trend confirmation
+input bool   RequireH1 = true;   // Require 1H Alligator trend confirmation
 input bool   RequireW1 = false;  // Require Weekly Alligator trend confirmation (very strict, often "sleeping")
 
 CTrade trade;
 
-int hAlligator30M = INVALID_HANDLE;
+int hAlligator15M = INVALID_HANDLE;
+int hAlligatorH1 = INVALID_HANDLE;
 int hAlligatorH4 = INVALID_HANDLE;
-int hAlligatorD1 = INVALID_HANDLE;
 int hAlligatorW1 = INVALID_HANDLE;
 
 struct PositionState
@@ -45,13 +45,13 @@ int OnInit()
    trade.SetExpertMagicNumber(MagicNumber);
    ConfigureFillingMode();
 
-   hAlligator30M = iAlligator(_Symbol, PERIOD_M30, 13, 8, 8, 5, 5, 3, MODE_SMMA, PRICE_MEDIAN);
+   hAlligator15M = iAlligator(_Symbol, PERIOD_M15, 13, 8, 8, 5, 5, 3, MODE_SMMA, PRICE_MEDIAN);
+   hAlligatorH1 = iAlligator(_Symbol, PERIOD_H1, 13, 8, 8, 5, 5, 3, MODE_SMMA, PRICE_MEDIAN);
    hAlligatorH4 = iAlligator(_Symbol, PERIOD_H4, 13, 8, 8, 5, 5, 3, MODE_SMMA, PRICE_MEDIAN);
-   hAlligatorD1 = iAlligator(_Symbol, PERIOD_D1, 13, 8, 8, 5, 5, 3, MODE_SMMA, PRICE_MEDIAN);
    hAlligatorW1 = iAlligator(_Symbol, PERIOD_W1, 13, 8, 8, 5, 5, 3, MODE_SMMA, PRICE_MEDIAN);
 
-   if(hAlligator30M == INVALID_HANDLE || hAlligatorH4 == INVALID_HANDLE ||
-      hAlligatorD1 == INVALID_HANDLE || hAlligatorW1 == INVALID_HANDLE)
+   if(hAlligator15M == INVALID_HANDLE || hAlligatorH1 == INVALID_HANDLE ||
+      hAlligatorH4 == INVALID_HANDLE || hAlligatorW1 == INVALID_HANDLE)
    {
       Print("Failed to create one or more Alligator indicator handles");
       return INIT_FAILED;
@@ -70,9 +70,9 @@ int OnInit()
 //+------------------------------------------------------------------+
 void OnDeinit(const int reason)
 {
-   if(hAlligator30M != INVALID_HANDLE) IndicatorRelease(hAlligator30M);
+   if(hAlligator15M != INVALID_HANDLE) IndicatorRelease(hAlligator15M);
+   if(hAlligatorH1 != INVALID_HANDLE) IndicatorRelease(hAlligatorH1);
    if(hAlligatorH4 != INVALID_HANDLE) IndicatorRelease(hAlligatorH4);
-   if(hAlligatorD1 != INVALID_HANDLE) IndicatorRelease(hAlligatorD1);
    if(hAlligatorW1 != INVALID_HANDLE) IndicatorRelease(hAlligatorW1);
    Print("=== Bot Stopped ===");
 }
@@ -103,36 +103,36 @@ void OnTick()
 //+------------------------------------------------------------------+
 void PrintAlligatorStatus()
 {
-   double jaw30M, teeth30M, lips30M;
-   bool ok30M = GetAlligator(hAlligator30M, jaw30M, teeth30M, lips30M);
+   double jaw15M, teeth15M, lips15M;
+   bool ok15M = GetAlligator(hAlligator15M, jaw15M, teeth15M, lips15M);
 
-   bool up4H = IsUptrendAlligator(hAlligatorH4);
-   bool upD1 = IsUptrendAlligator(hAlligatorD1);
+   bool upH1 = IsUptrendAlligator(hAlligatorH1);
+   bool upH4 = IsUptrendAlligator(hAlligatorH4);
    bool upW1 = IsUptrendAlligator(hAlligatorW1);
 
-   bool dn4H = IsDowntrendAlligator(hAlligatorH4);
-   bool dnD1 = IsDowntrendAlligator(hAlligatorD1);
+   bool dnH1 = IsDowntrendAlligator(hAlligatorH1);
+   bool dnH4 = IsDowntrendAlligator(hAlligatorH4);
    bool dnW1 = IsDowntrendAlligator(hAlligatorW1);
 
    double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
 
-   if(!ok30M)
+   if(!ok15M)
    {
-      Print("[status] 30M Alligator data not ready yet (not enough history)");
+      Print("[status] 15M Alligator data not ready yet (not enough history)");
    }
    else
    {
-      PrintFormat("[status] 30M jaw=%.5f teeth=%.5f lips=%.5f bid=%.5f bid>lips=%s",
-                  jaw30M, teeth30M, lips30M, bid, (bid > lips30M ? "true" : "false"));
+      PrintFormat("[status] 15M jaw=%.5f teeth=%.5f lips=%.5f bid=%.5f bid>lips=%s",
+                  jaw15M, teeth15M, lips15M, bid, (bid > lips15M ? "true" : "false"));
    }
 
-   PrintFormat("[status] H4 up=%s down=%s | D1 up=%s down=%s | W1 up=%s down=%s",
-               up4H ? "true" : "false", dn4H ? "true" : "false",
-               upD1 ? "true" : "false", dnD1 ? "true" : "false",
+   PrintFormat("[status] H1 up=%s down=%s | H4 up=%s down=%s | W1 up=%s down=%s",
+               upH1 ? "true" : "false", dnH1 ? "true" : "false",
+               upH4 ? "true" : "false", dnH4 ? "true" : "false",
                upW1 ? "true" : "false", dnW1 ? "true" : "false");
 
-   if(!up4H && !dn4H) Print("[status] H4 Alligator: no data / no clear trend (lines not fanned)");
-   if(!upD1 && !dnD1) Print("[status] D1 Alligator: no data / no clear trend (lines not fanned)");
+   if(!upH1 && !dnH1) Print("[status] H1 Alligator: no data / no clear trend (lines not fanned)");
+   if(!upH4 && !dnH4) Print("[status] H4 Alligator: no data / no clear trend (lines not fanned)");
    if(!upW1 && !dnW1) Print("[status] W1 Alligator: no data / no clear trend (lines not fanned)");
 }
 
@@ -213,32 +213,32 @@ void CheckAlligatorSetup()
    if(IsMajorNewsTime())
       return;
 
-   double jaw30M, teeth30M, lips30M;
-   if(!GetAlligator(hAlligator30M, jaw30M, teeth30M, lips30M))
+   double jaw15M, teeth15M, lips15M;
+   if(!GetAlligator(hAlligator15M, jaw15M, teeth15M, lips15M))
       return;
 
    // If a higher-timeframe filter is disabled, treat it as automatically passed
-   bool uptrend4H   = !RequireH4 || IsUptrendAlligator(hAlligatorH4);
-   bool uptrendD1   = !RequireD1 || IsUptrendAlligator(hAlligatorD1);
-   bool uptrendW1   = !RequireW1 || IsUptrendAlligator(hAlligatorW1);
+   bool uptrendH1  = !RequireH1 || IsUptrendAlligator(hAlligatorH1);
+   bool uptrendH4  = !RequireH4 || IsUptrendAlligator(hAlligatorH4);
+   bool uptrendW1  = !RequireW1 || IsUptrendAlligator(hAlligatorW1);
 
-   bool downtrend4H = !RequireH4 || IsDowntrendAlligator(hAlligatorH4);
-   bool downtrendD1 = !RequireD1 || IsDowntrendAlligator(hAlligatorD1);
+   bool downtrendH1 = !RequireH1 || IsDowntrendAlligator(hAlligatorH1);
+   bool downtrendH4 = !RequireH4 || IsDowntrendAlligator(hAlligatorH4);
    bool downtrendW1 = !RequireW1 || IsDowntrendAlligator(hAlligatorW1);
 
    double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
    double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
 
-   if(bid > lips30M && uptrend4H && uptrendD1 && uptrendW1)
+   if(bid > lips15M && uptrendH1 && uptrendH4 && uptrendW1)
    {
-      Print("BUY signal (30M entry, higher-TF confirmed)");
+      Print("BUY signal (15M entry, higher-TF confirmed)");
       OpenBuy();
       return;
    }
 
-   if(ask < lips30M && downtrend4H && downtrendD1 && downtrendW1)
+   if(ask < lips15M && downtrendH1 && downtrendH4 && downtrendW1)
    {
-      Print("SELL signal (30M entry, higher-TF confirmed)");
+      Print("SELL signal (15M entry, higher-TF confirmed)");
       OpenSell();
    }
 }
