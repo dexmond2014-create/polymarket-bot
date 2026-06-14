@@ -76,12 +76,60 @@ void OnDeinit(const int reason)
 //+------------------------------------------------------------------+
 //| Expert tick function                                              |
 //+------------------------------------------------------------------+
+datetime g_lastBarTime = 0;
+
 void OnTick()
 {
    ManageOpenPositions();
 
+   // Print a status snapshot once per new 30M bar (for debugging)
+   datetime barTime = iTime(_Symbol, PERIOD_M30, 0);
+   if(barTime != g_lastBarTime)
+   {
+      g_lastBarTime = barTime;
+      PrintAlligatorStatus();
+   }
+
    if(CountMyPositions() < MaxTrades)
       CheckAlligatorSetup();
+}
+
+//+------------------------------------------------------------------+
+//| Debug: print Alligator readings + trend flags for all timeframes  |
+//+------------------------------------------------------------------+
+void PrintAlligatorStatus()
+{
+   double jaw30M, teeth30M, lips30M;
+   bool ok30M = GetAlligator(hAlligator30M, jaw30M, teeth30M, lips30M);
+
+   bool up4H = IsUptrendAlligator(hAlligatorH4);
+   bool upD1 = IsUptrendAlligator(hAlligatorD1);
+   bool upW1 = IsUptrendAlligator(hAlligatorW1);
+
+   bool dn4H = IsDowntrendAlligator(hAlligatorH4);
+   bool dnD1 = IsDowntrendAlligator(hAlligatorD1);
+   bool dnW1 = IsDowntrendAlligator(hAlligatorW1);
+
+   double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+
+   if(!ok30M)
+   {
+      Print("[status] 30M Alligator data not ready yet (not enough history)");
+   }
+   else
+   {
+      PrintFormat("[status] 30M jaw=%.5f teeth=%.5f lips=%.5f bid=%.5f bid>lips=%s",
+                  jaw30M, teeth30M, lips30M, bid, (bid > lips30M ? "true" : "false"));
+   }
+
+   PrintFormat("[status] H4 up=%s down=%s | D1 up=%s down=%s | W1 up=%s down=%s",
+               up4H ? "true" : "false", dn4H ? "true" : "false",
+               upD1 ? "true" : "false", dnD1 ? "true" : "false",
+               upW1 ? "true" : "false", dnW1 ? "true" : "false");
+
+   if(!up4H && !dn4H) Print("[status] H4 Alligator: no data / no clear trend (lines not fanned)");
+   if(!upD1 && !dnD1) Print("[status] D1 Alligator: no data / no clear trend (lines not fanned)");
+   if(!upW1 && !dnW1) Print("[status] W1 Alligator: no data / no clear trend (lines not fanned)");
 }
 
 //+------------------------------------------------------------------+
