@@ -18,6 +18,10 @@ input bool   UseNewsFilter   = true;   // Pause new entries during news hours
 input int    MagicNumber     = 123456;
 input int    MaxTrades       = 2;      // Max simultaneous open positions for this EA
 
+input bool   RequireH4 = true;   // Require H4 Alligator trend confirmation
+input bool   RequireD1 = true;   // Require Daily Alligator trend confirmation
+input bool   RequireW1 = false;  // Require Weekly Alligator trend confirmation (very strict, often "sleeping")
+
 CTrade trade;
 
 int hAlligator30M = INVALID_HANDLE;
@@ -213,27 +217,28 @@ void CheckAlligatorSetup()
    if(!GetAlligator(hAlligator30M, jaw30M, teeth30M, lips30M))
       return;
 
-   bool uptrend4H   = IsUptrendAlligator(hAlligatorH4);
-   bool uptrendD1   = IsUptrendAlligator(hAlligatorD1);
-   bool uptrendW1   = IsUptrendAlligator(hAlligatorW1);
+   // If a higher-timeframe filter is disabled, treat it as automatically passed
+   bool uptrend4H   = !RequireH4 || IsUptrendAlligator(hAlligatorH4);
+   bool uptrendD1   = !RequireD1 || IsUptrendAlligator(hAlligatorD1);
+   bool uptrendW1   = !RequireW1 || IsUptrendAlligator(hAlligatorW1);
 
-   bool downtrend4H = IsDowntrendAlligator(hAlligatorH4);
-   bool downtrendD1 = IsDowntrendAlligator(hAlligatorD1);
-   bool downtrendW1 = IsDowntrendAlligator(hAlligatorW1);
+   bool downtrend4H = !RequireH4 || IsDowntrendAlligator(hAlligatorH4);
+   bool downtrendD1 = !RequireD1 || IsDowntrendAlligator(hAlligatorD1);
+   bool downtrendW1 = !RequireW1 || IsDowntrendAlligator(hAlligatorW1);
 
    double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
    double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
 
    if(bid > lips30M && uptrend4H && uptrendD1 && uptrendW1)
    {
-      Print("BUY signal (30M entry, H4/D1/W1 confirmed)");
+      Print("BUY signal (30M entry, higher-TF confirmed)");
       OpenBuy();
       return;
    }
 
    if(ask < lips30M && downtrend4H && downtrendD1 && downtrendW1)
    {
-      Print("SELL signal (30M entry, H4/D1/W1 confirmed)");
+      Print("SELL signal (30M entry, higher-TF confirmed)");
       OpenSell();
    }
 }
