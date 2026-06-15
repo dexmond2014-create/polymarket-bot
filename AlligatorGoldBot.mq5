@@ -25,6 +25,8 @@ input bool   RequireW1 = false;  // Require Weekly Alligator trend confirmation 
 input bool   RequireMA200 = true;  // Require 15M Alligator (jaw/teeth/lips) all above/below the 200 MA
 input int    MA200Period  = 200;   // Period of the 15M moving average used for trend confirmation
 
+input int    CooldownMinutes = 15; // Wait this long after a trade closes before re-checking for entries
+
 CTrade trade;
 
 int hAlligator15M = INVALID_HANDLE;
@@ -88,6 +90,7 @@ void OnDeinit(const int reason)
 //| Expert tick function                                              |
 //+------------------------------------------------------------------+
 datetime g_lastStatusTime = 0;
+datetime g_lastTradeCloseTime = 0;
 
 void OnTick()
 {
@@ -100,7 +103,9 @@ void OnTick()
       PrintAlligatorStatus();
    }
 
-   if(CountMyPositions() < MaxTrades)
+   bool cooldownActive = (TimeCurrent() - g_lastTradeCloseTime) < CooldownMinutes * 60;
+
+   if(!cooldownActive && CountMyPositions() < MaxTrades)
       CheckAlligatorSetup();
 }
 
@@ -371,6 +376,7 @@ void ManageOpenPositions()
       if(!PositionSelectByTicket(ticket))
       {
          // Position already closed (e.g. stop loss hit) — stop tracking it
+         g_lastTradeCloseTime = TimeCurrent();
          ArrayRemove(g_positions, i, 1);
          continue;
       }
@@ -407,6 +413,7 @@ void ManageOpenPositions()
             PrintFormat("[exit] Closed ticket %I64u | peak profit %.1f pts, retraced by %.1f pts",
                         ticket, g_positions[i].peakProfitPoints,
                         (g_positions[i].peakProfitPoints - profitPoints));
+         g_lastTradeCloseTime = TimeCurrent();
          ArrayRemove(g_positions, i, 1);
       }
    }
