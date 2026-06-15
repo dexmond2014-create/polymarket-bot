@@ -18,8 +18,6 @@ input bool   UseNewsFilter   = true;   // Pause new entries during news hours
 input int    MagicNumber     = 123456;
 input int    MaxTrades       = 2;      // Max simultaneous open positions for this EA
 
-input double DailyLossLimit  = 30.0;   // Stop opening new trades once today's losses reach this (account currency, 0 = disabled)
-
 input bool   RequireH4 = true;   // Require H4 Alligator trend confirmation
 input bool   RequireH1 = true;   // Require 1H Alligator trend confirmation
 input bool   RequireW1 = false;  // Require Weekly Alligator trend confirmation (very strict, often "sleeping")
@@ -90,7 +88,6 @@ void OnDeinit(const int reason)
 //| Expert tick function                                              |
 //+------------------------------------------------------------------+
 datetime g_lastStatusTime = 0;
-bool     g_dailyLimitHit  = false;
 
 void OnTick()
 {
@@ -103,63 +100,8 @@ void OnTick()
       PrintAlligatorStatus();
    }
 
-   // Daily loss limit safety check
-   if(DailyLossLimit > 0)
-   {
-      double todayLosses = GetTodayLosses();
-      bool   limitHit     = (todayLosses >= DailyLossLimit);
-
-      if(limitHit && !g_dailyLimitHit)
-         PrintFormat("[safety] Daily loss limit reached: -%.2f >= -%.2f — pausing new entries until tomorrow",
-                     todayLosses, DailyLossLimit);
-
-      if(!limitHit && g_dailyLimitHit)
-         Print("[safety] New trading day — daily loss limit reset, entries resumed");
-
-      g_dailyLimitHit = limitHit;
-   }
-
-   if(!g_dailyLimitHit && CountMyPositions() < MaxTrades)
+   if(CountMyPositions() < MaxTrades)
       CheckAlligatorSetup();
-}
-
-//+------------------------------------------------------------------+
-//| Sum of realized losses (this EA, this symbol) since midnight      |
-//+------------------------------------------------------------------+
-double GetTodayLosses()
-{
-   MqlDateTime dt;
-   TimeToStruct(TimeCurrent(), dt);
-   dt.hour = 0;
-   dt.min  = 0;
-   dt.sec  = 0;
-   datetime dayStart = StructToTime(dt);
-
-   if(!HistorySelect(dayStart, TimeCurrent()))
-      return 0;
-
-   double losses = 0;
-   int total = HistoryDealsTotal();
-   for(int i = 0; i < total; i++)
-   {
-      ulong dealTicket = HistoryDealGetTicket(i);
-      if(dealTicket == 0)
-         continue;
-      if(HistoryDealGetString(dealTicket, DEAL_SYMBOL) != _Symbol)
-         continue;
-      if(HistoryDealGetInteger(dealTicket, DEAL_MAGIC) != MagicNumber)
-         continue;
-      if(HistoryDealGetInteger(dealTicket, DEAL_ENTRY) != DEAL_ENTRY_OUT)
-         continue;
-
-      double profit = HistoryDealGetDouble(dealTicket, DEAL_PROFIT)
-                     + HistoryDealGetDouble(dealTicket, DEAL_SWAP)
-                     + HistoryDealGetDouble(dealTicket, DEAL_COMMISSION);
-
-      if(profit < 0)
-         losses += -profit;
-   }
-   return losses;
 }
 
 //+------------------------------------------------------------------+
@@ -198,12 +140,6 @@ void PrintAlligatorStatus()
    if(!upH1 && !dnH1) Print("[status] H1 Alligator: no data / no clear trend (lines not fanned)");
    if(!upH4 && !dnH4) Print("[status] H4 Alligator: no data / no clear trend (lines not fanned)");
    if(!upW1 && !dnW1) Print("[status] W1 Alligator: no data / no clear trend (lines not fanned)");
-
-   if(DailyLossLimit > 0)
-   {
-      PrintFormat("[status] Today's losses: %.2f / %.2f limit | new entries %s",
-                  GetTodayLosses(), DailyLossLimit, g_dailyLimitHit ? "PAUSED" : "allowed");
-   }
 
    if(RequireMA200)
    {
