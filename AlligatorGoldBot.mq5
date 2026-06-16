@@ -18,22 +18,25 @@ input bool   UseNewsFilter   = true;   // Pause new entries during news hours
 input int    MagicNumber     = 123456;
 input int    MaxTrades       = 2;      // Max simultaneous open positions for this EA
 
+input ENUM_TIMEFRAMES EntryTimeframe = PERIOD_M15; // Entry timeframe (M5 for faster entries, M15 for standard)
+input bool   RequireTwoCandles = true;  // Require 2 consecutive bullish/bearish closed candles before entry
+
 input bool   RequireH4 = true;   // Require H4 Alligator trend confirmation
 input bool   RequireH1 = true;   // Require 1H Alligator trend confirmation
 input bool   RequireW1 = false;  // Require Weekly Alligator trend confirmation (very strict, often "sleeping")
 
-input bool   RequireMA200 = true;  // Require 15M Alligator (jaw/teeth/lips) all above/below the 200 MA
-input int    MA200Period  = 200;   // Period of the 15M moving average used for trend confirmation
+input bool   RequireMA = true;  // Require entry Alligator (jaw/teeth/lips) all above/below the MA
+input int    MAPeriod  = 50;    // Period of the entry-timeframe moving average (50 = faster, 200 = stricter)
 
 input int    CooldownMinutes = 15; // Wait this long after a trade closes before re-checking for entries
 
 CTrade trade;
 
-int hAlligator15M = INVALID_HANDLE;
-int hAlligatorH1 = INVALID_HANDLE;
-int hAlligatorH4 = INVALID_HANDLE;
-int hAlligatorW1 = INVALID_HANDLE;
-int hMA200_15M = INVALID_HANDLE;
+int hAlligatorEntry = INVALID_HANDLE;
+int hAlligatorH1    = INVALID_HANDLE;
+int hAlligatorH4    = INVALID_HANDLE;
+int hAlligatorW1    = INVALID_HANDLE;
+int hMAEntry        = INVALID_HANDLE;
 
 struct PositionState
 {
@@ -51,24 +54,28 @@ int OnInit()
    trade.SetExpertMagicNumber(MagicNumber);
    ConfigureFillingMode();
 
-   hAlligator15M = iAlligator(_Symbol, PERIOD_M15, 13, 8, 8, 5, 5, 3, MODE_SMMA, PRICE_MEDIAN);
-   hAlligatorH1 = iAlligator(_Symbol, PERIOD_H1, 13, 8, 8, 5, 5, 3, MODE_SMMA, PRICE_MEDIAN);
-   hAlligatorH4 = iAlligator(_Symbol, PERIOD_H4, 13, 8, 8, 5, 5, 3, MODE_SMMA, PRICE_MEDIAN);
-   hAlligatorW1 = iAlligator(_Symbol, PERIOD_W1, 13, 8, 8, 5, 5, 3, MODE_SMMA, PRICE_MEDIAN);
-   hMA200_15M = iMA(_Symbol, PERIOD_M15, MA200Period, 0, MODE_SMA, PRICE_CLOSE);
+   hAlligatorEntry = iAlligator(_Symbol, EntryTimeframe, 13, 8, 8, 5, 5, 3, MODE_SMMA, PRICE_MEDIAN);
+   hAlligatorH1    = iAlligator(_Symbol, PERIOD_H1, 13, 8, 8, 5, 5, 3, MODE_SMMA, PRICE_MEDIAN);
+   hAlligatorH4    = iAlligator(_Symbol, PERIOD_H4, 13, 8, 8, 5, 5, 3, MODE_SMMA, PRICE_MEDIAN);
+   hAlligatorW1    = iAlligator(_Symbol, PERIOD_W1, 13, 8, 8, 5, 5, 3, MODE_SMMA, PRICE_MEDIAN);
+   hMAEntry        = iMA(_Symbol, EntryTimeframe, MAPeriod, 0, MODE_SMA, PRICE_CLOSE);
 
-   if(hAlligator15M == INVALID_HANDLE || hAlligatorH1 == INVALID_HANDLE ||
+   if(hAlligatorEntry == INVALID_HANDLE || hAlligatorH1 == INVALID_HANDLE ||
       hAlligatorH4 == INVALID_HANDLE || hAlligatorW1 == INVALID_HANDLE ||
-      hMA200_15M == INVALID_HANDLE)
+      hMAEntry == INVALID_HANDLE)
    {
       Print("Failed to create one or more Alligator/MA indicator handles");
       return INIT_FAILED;
    }
 
+   string tfName = EnumToString(EntryTimeframe);
    Print("=== Alligator Gold Bot Started ===");
-   Print("Lot Size: ",    LotSize);
-   Print("News Filter: ", UseNewsFilter);
-   Print("Max Trades: ",  MaxTrades);
+   Print("Lot Size: ",      LotSize);
+   Print("News Filter: ",   UseNewsFilter);
+   Print("Max Trades: ",    MaxTrades);
+   Print("Entry TF: ",      tfName);
+   Print("MA Period: ",     MAPeriod);
+   Print("Two Candles: ",   RequireTwoCandles);
 
    return INIT_SUCCEEDED;
 }
@@ -78,18 +85,18 @@ int OnInit()
 //+------------------------------------------------------------------+
 void OnDeinit(const int reason)
 {
-   if(hAlligator15M != INVALID_HANDLE) IndicatorRelease(hAlligator15M);
-   if(hAlligatorH1 != INVALID_HANDLE) IndicatorRelease(hAlligatorH1);
-   if(hAlligatorH4 != INVALID_HANDLE) IndicatorRelease(hAlligatorH4);
-   if(hAlligatorW1 != INVALID_HANDLE) IndicatorRelease(hAlligatorW1);
-   if(hMA200_15M != INVALID_HANDLE) IndicatorRelease(hMA200_15M);
+   if(hAlligatorEntry != INVALID_HANDLE) IndicatorRelease(hAlligatorEntry);
+   if(hAlligatorH1    != INVALID_HANDLE) IndicatorRelease(hAlligatorH1);
+   if(hAlligatorH4    != INVALID_HANDLE) IndicatorRelease(hAlligatorH4);
+   if(hAlligatorW1    != INVALID_HANDLE) IndicatorRelease(hAlligatorW1);
+   if(hMAEntry        != INVALID_HANDLE) IndicatorRelease(hMAEntry);
    Print("=== Bot Stopped ===");
 }
 
 //+------------------------------------------------------------------+
 //| Expert tick function                                              |
 //+------------------------------------------------------------------+
-datetime g_lastStatusTime = 0;
+datetime g_lastStatusTime    = 0;
 datetime g_lastTradeCloseTime = 0;
 
 void OnTick()
@@ -114,8 +121,8 @@ void OnTick()
 //+------------------------------------------------------------------+
 void PrintAlligatorStatus()
 {
-   double jaw15M, teeth15M, lips15M;
-   bool ok15M = GetAlligator(hAlligator15M, jaw15M, teeth15M, lips15M);
+   double jawE, teethE, lipsE;
+   bool okEntry = GetAlligator(hAlligatorEntry, jawE, teethE, lipsE);
 
    bool upH1 = IsUptrendAlligator(hAlligatorH1);
    bool upH4 = IsUptrendAlligator(hAlligatorH4);
@@ -126,15 +133,16 @@ void PrintAlligatorStatus()
    bool dnW1 = IsDowntrendAlligator(hAlligatorW1);
 
    double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   string tfName = EnumToString(EntryTimeframe);
 
-   if(!ok15M)
+   if(!okEntry)
    {
-      Print("[status] 15M Alligator data not ready yet (not enough history)");
+      PrintFormat("[status] %s Alligator data not ready yet (not enough history)", tfName);
    }
    else
    {
-      PrintFormat("[status] 15M jaw=%.5f teeth=%.5f lips=%.5f bid=%.5f bid>lips=%s",
-                  jaw15M, teeth15M, lips15M, bid, (bid > lips15M ? "true" : "false"));
+      PrintFormat("[status] %s jaw=%.5f teeth=%.5f lips=%.5f bid=%.5f bid>lips=%s",
+                  tfName, jawE, teethE, lipsE, bid, (bid > lipsE ? "true" : "false"));
    }
 
    PrintFormat("[status] H1 up=%s down=%s | H4 up=%s down=%s | W1 up=%s down=%s",
@@ -146,20 +154,32 @@ void PrintAlligatorStatus()
    if(!upH4 && !dnH4) Print("[status] H4 Alligator: no data / no clear trend (lines not fanned)");
    if(!upW1 && !dnW1) Print("[status] W1 Alligator: no data / no clear trend (lines not fanned)");
 
-   if(RequireMA200)
+   if(RequireMA)
    {
-      double ma200;
-      if(ok15M && GetMA(hMA200_15M, ma200))
+      double ma;
+      if(okEntry && GetMA(hMAEntry, ma))
       {
-         bool above = (jaw15M > ma200 && teeth15M > ma200 && lips15M > ma200);
-         bool below = (jaw15M < ma200 && teeth15M < ma200 && lips15M < ma200);
-         PrintFormat("[status] MA200(15M)=%.5f | Alligator above=%s below=%s",
-                     ma200, above ? "true" : "false", below ? "true" : "false");
+         bool above = (jawE > ma && teethE > ma && lipsE > ma);
+         bool below = (jawE < ma && teethE < ma && lipsE < ma);
+         PrintFormat("[status] MA%d(%s)=%.5f | Alligator above=%s below=%s",
+                     MAPeriod, tfName, ma, above ? "true" : "false", below ? "true" : "false");
       }
       else
       {
-         Print("[status] MA200(15M) data not ready yet (not enough history)");
+         PrintFormat("[status] MA%d(%s) data not ready yet", MAPeriod, tfName);
       }
+   }
+
+   if(RequireTwoCandles)
+   {
+      double c1 = iClose(_Symbol, EntryTimeframe, 1);
+      double o1 = iOpen(_Symbol,  EntryTimeframe, 1);
+      double c2 = iClose(_Symbol, EntryTimeframe, 2);
+      double o2 = iOpen(_Symbol,  EntryTimeframe, 2);
+      bool twoGreen = (c1 > o1 && c2 > o2);
+      bool twoRed   = (c1 < o1 && c2 < o2);
+      PrintFormat("[status] Last 2 candles: green=%s red=%s",
+                  twoGreen ? "true" : "false", twoRed ? "true" : "false");
    }
 }
 
@@ -244,6 +264,27 @@ bool IsDowntrendAlligator(int handle)
 }
 
 //+------------------------------------------------------------------+
+//| Check 2 consecutive closed candles are bullish or bearish         |
+//+------------------------------------------------------------------+
+bool TwoConsecutiveBullish()
+{
+   double c1 = iClose(_Symbol, EntryTimeframe, 1);
+   double o1 = iOpen(_Symbol,  EntryTimeframe, 1);
+   double c2 = iClose(_Symbol, EntryTimeframe, 2);
+   double o2 = iOpen(_Symbol,  EntryTimeframe, 2);
+   return (c1 > o1 && c2 > o2);
+}
+
+bool TwoConsecutiveBearish()
+{
+   double c1 = iClose(_Symbol, EntryTimeframe, 1);
+   double o1 = iOpen(_Symbol,  EntryTimeframe, 1);
+   double c2 = iClose(_Symbol, EntryTimeframe, 2);
+   double o2 = iOpen(_Symbol,  EntryTimeframe, 2);
+   return (c1 < o1 && c2 < o2);
+}
+
+//+------------------------------------------------------------------+
 //| Multi-timeframe Alligator entry check                              |
 //+------------------------------------------------------------------+
 void CheckAlligatorSetup()
@@ -251,8 +292,8 @@ void CheckAlligatorSetup()
    if(IsMajorNewsTime())
       return;
 
-   double jaw15M, teeth15M, lips15M;
-   if(!GetAlligator(hAlligator15M, jaw15M, teeth15M, lips15M))
+   double jawE, teethE, lipsE;
+   if(!GetAlligator(hAlligatorEntry, jawE, teethE, lipsE))
       return;
 
    // If a higher-timeframe filter is disabled, treat it as automatically passed
@@ -264,32 +305,38 @@ void CheckAlligatorSetup()
    bool downtrendH4 = !RequireH4 || IsDowntrendAlligator(hAlligatorH4);
    bool downtrendW1 = !RequireW1 || IsDowntrendAlligator(hAlligatorW1);
 
-   // 200 MA filter: all 3 Alligator lines must sit above/below the 15M MA200
-   bool aboveMA200 = true;
-   bool belowMA200 = true;
-   if(RequireMA200)
+   // MA filter: all 3 Alligator lines must sit above/below the entry-TF MA
+   bool aboveMA = true;
+   bool belowMA = true;
+   if(RequireMA)
    {
-      double ma200;
-      if(!GetMA(hMA200_15M, ma200))
+      double ma;
+      if(!GetMA(hMAEntry, ma))
          return;
 
-      aboveMA200 = (jaw15M > ma200 && teeth15M > ma200 && lips15M > ma200);
-      belowMA200 = (jaw15M < ma200 && teeth15M < ma200 && lips15M < ma200);
+      aboveMA = (jawE > ma && teethE > ma && lipsE > ma);
+      belowMA = (jawE < ma && teethE < ma && lipsE < ma);
    }
+
+   // Two-candle confirmation
+   bool bullishCandles = !RequireTwoCandles || TwoConsecutiveBullish();
+   bool bearishCandles = !RequireTwoCandles || TwoConsecutiveBearish();
 
    double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
    double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
 
-   if(bid > lips15M && uptrendH1 && uptrendH4 && uptrendW1 && aboveMA200)
+   if(bid > lipsE && uptrendH1 && uptrendH4 && uptrendW1 && aboveMA && bullishCandles)
    {
-      Print("BUY signal (15M entry, higher-TF confirmed, MA200 aligned)");
+      PrintFormat("BUY signal (%s entry, higher-TF confirmed, MA%d aligned, 2-candle=%s)",
+                  EnumToString(EntryTimeframe), MAPeriod, RequireTwoCandles ? "true" : "off");
       OpenBuy();
       return;
    }
 
-   if(ask < lips15M && downtrendH1 && downtrendH4 && downtrendW1 && belowMA200)
+   if(ask < lipsE && downtrendH1 && downtrendH4 && downtrendW1 && belowMA && bearishCandles)
    {
-      Print("SELL signal (15M entry, higher-TF confirmed, MA200 aligned)");
+      PrintFormat("SELL signal (%s entry, higher-TF confirmed, MA%d aligned, 2-candle=%s)",
+                  EnumToString(EntryTimeframe), MAPeriod, RequireTwoCandles ? "true" : "off");
       OpenSell();
    }
 }
