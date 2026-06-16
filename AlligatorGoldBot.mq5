@@ -28,6 +28,7 @@ input bool   RequireW1 = false;  // Require Weekly Alligator trend confirmation 
 input bool   RequireMA = true;  // Require entry Alligator (jaw/teeth/lips) all above/below the MA
 input int    MAPeriod  = 50;    // Period of the entry-timeframe moving average (50 = faster, 200 = stricter)
 
+input bool   AllowPullbackEntry = true; // Also enter when price retraces back to the Lips/Teeth zone during a fanned Alligator
 input int    CooldownMinutes = 15; // Wait this long after a trade closes before re-checking for entries
 
 CTrade trade;
@@ -325,18 +326,37 @@ void CheckAlligatorSetup()
    double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
    double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
 
-   if(bid > lipsE && uptrendH1 && uptrendH4 && uptrendW1 && aboveMA && bullishCandles)
+   // Normal entry: price above/below Lips
+   bool entryBuy  = (bid > lipsE);
+   bool entrySell = (ask < lipsE);
+
+   // Pullback entry: price retraces into Teeth-Lips zone while Alligator stays fanned
+   if(AllowPullbackEntry)
    {
-      PrintFormat("BUY signal (%s entry, higher-TF confirmed, MA%d aligned, 2-candle=%s)",
-                  EnumToString(EntryTimeframe), MAPeriod, RequireTwoCandles ? "true" : "off");
+      bool alligatorBullish = (lipsE > teethE && teethE > jawE);
+      bool alligatorBearish = (jawE  > teethE && teethE > lipsE);
+
+      if(alligatorBullish && bid >= teethE && bid <= lipsE)
+         entryBuy = true;
+
+      if(alligatorBearish && ask <= teethE && ask >= lipsE)
+         entrySell = true;
+   }
+
+   if(entryBuy && uptrendH1 && uptrendH4 && uptrendW1 && aboveMA && bullishCandles)
+   {
+      string reason = (bid > lipsE) ? "breakout" : "pullback-to-lips";
+      PrintFormat("BUY signal (%s, %s entry, MA%d aligned, 2-candle=%s)",
+                  EnumToString(EntryTimeframe), reason, MAPeriod, RequireTwoCandles ? "true" : "off");
       OpenBuy();
       return;
    }
 
-   if(ask < lipsE && downtrendH1 && downtrendH4 && downtrendW1 && belowMA && bearishCandles)
+   if(entrySell && downtrendH1 && downtrendH4 && downtrendW1 && belowMA && bearishCandles)
    {
-      PrintFormat("SELL signal (%s entry, higher-TF confirmed, MA%d aligned, 2-candle=%s)",
-                  EnumToString(EntryTimeframe), MAPeriod, RequireTwoCandles ? "true" : "off");
+      string reason = (ask < lipsE) ? "breakdown" : "pullback-to-lips";
+      PrintFormat("SELL signal (%s, %s entry, MA%d aligned, 2-candle=%s)",
+                  EnumToString(EntryTimeframe), reason, MAPeriod, RequireTwoCandles ? "true" : "off");
       OpenSell();
    }
 }
