@@ -16,7 +16,7 @@ input int    BreakevenProfit = 15000;  // Move SL to breakeven after this many p
 input int    RetraceProfit   = 5000;   // Close trade if profit retraces this many points from its peak (gold: 20, crypto: 5000)
 input bool   UseNewsFilter   = true;   // Pause new entries during news hours
 input int    MagicNumber     = 123456;
-input int    MaxTrades       = 2;      // Max simultaneous open positions for this EA
+input int    MaxTrades       = 10;     // Max simultaneous open positions for this EA
 
 input ENUM_TIMEFRAMES EntryTimeframe = PERIOD_M15; // Entry timeframe (M5 for faster entries, M15 for standard)
 input bool   RequireTwoCandles = false;  // Require 2 consecutive bullish/bearish closed candles before entry
