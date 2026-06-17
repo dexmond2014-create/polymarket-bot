@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Claude AI"
 #property link      "https://www.mql5.com"
-#property version   "3.08"
+#property version   "3.09"
 
 #include <Trade\Trade.mqh>
 
@@ -14,7 +14,7 @@ input double LotSize         = 0.01;   // Lot size per trade
 input int    StopLoss        = 8000;   // Stop loss, in points (gold: 30, crypto: 8000)
 input int    BreakevenProfit = 15000;  // Move SL to breakeven after this many points of profit (gold: 20, crypto: 15000)
 input int    RetraceProfit   = 5000;   // Close trade if profit retraces this many points from its peak (gold: 20, crypto: 5000)
-input bool   UseNewsFilter   = true;   // Pause new entries during news hours
+input bool   UseNewsFilter   = false;  // Pause new entries during news hours (off — StopLoss already caps risk)
 input int    MagicNumber     = 123456;
 input int    MaxTrades       = 999;    // Max simultaneous open positions for this EA (effectively unlimited)
 
