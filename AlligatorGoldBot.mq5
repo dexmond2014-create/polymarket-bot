@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Claude AI"
 #property link      "https://www.mql5.com"
-#property version   "3.06"
+#property version   "3.07"
 
 #include <Trade\Trade.mqh>
 
@@ -136,6 +136,11 @@ void PrintAlligatorStatus()
 
    double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
    string tfName = EnumToString(EntryTimeframe);
+
+   MqlDateTime dtNow;
+   TimeToStruct(TimeCurrent(), dtNow);
+   PrintFormat("[status] News filter active=%s (server hour=%d)",
+               IsMajorNewsTime() ? "true" : "false", dtNow.hour);
 
    if(!okEntry)
    {
