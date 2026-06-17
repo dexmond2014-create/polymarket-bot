@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Claude AI"
 #property link      "https://www.mql5.com"
-#property version   "3.00"
+#property version   "3.05"
 
 #include <Trade\Trade.mqh>
 
