@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Claude AI"
 #property link      "https://www.mql5.com"
-#property version   "3.05"
+#property version   "3.06"
 
 #include <Trade\Trade.mqh>
 
@@ -27,6 +27,10 @@ input bool   RequireW1 = false;  // Require Weekly Alligator trend confirmation 
 
 input bool   AllowPullbackEntry = true; // Also enter when price retraces back to the Lips/Teeth zone during a fanned Alligator
 input int    CooldownMinutes = 15; // Wait this long after a trade closes before re-checking for entries
+
+input bool   UseSpikeEntry        = true;  // Enter in the direction of a fast, sharp price spike (ignores trend filters)
+input int    SpikeLookbackBars    = 3;     // Measure the spike over this many closed bars on EntryTimeframe
+input int    SpikeThresholdPoints = 3000;  // Minimum move within lookback bars to count as a spike (points)
 
 CTrade trade;
 
@@ -70,6 +74,7 @@ int OnInit()
    Print("Max Trades: ",    MaxTrades);
    Print("Entry TF: ",      tfName);
    Print("Two Candles: ",   RequireTwoCandles);
+   Print("Spike Entry: ",   UseSpikeEntry, " (", SpikeThresholdPoints, " pts over ", SpikeLookbackBars, " bars)");
 
    return INIT_SUCCEEDED;
 }
@@ -91,6 +96,7 @@ void OnDeinit(const int reason)
 //+------------------------------------------------------------------+
 datetime g_lastStatusTime    = 0;
 datetime g_lastTradeCloseTime = 0;
+datetime g_lastSpikeBarTime   = 0;
 
 void OnTick()
 {
@@ -106,7 +112,10 @@ void OnTick()
    bool cooldownActive = (TimeCurrent() - g_lastTradeCloseTime) < CooldownMinutes * 60;
 
    if(!cooldownActive && CountMyPositions() < MaxTrades)
+   {
       CheckAlligatorSetup();
+      CheckSpikeEntry();
+   }
 }
 
 //+------------------------------------------------------------------+
@@ -157,6 +166,14 @@ void PrintAlligatorStatus()
       bool twoRed   = (c1 < o1 && c2 < o2);
       PrintFormat("[status] Last 2 candles: green=%s red=%s",
                   twoGreen ? "true" : "false", twoRed ? "true" : "false");
+   }
+
+   if(UseSpikeEntry)
+   {
+      double movePoints = (iClose(_Symbol, EntryTimeframe, 0) -
+                            iClose(_Symbol, EntryTimeframe, SpikeLookbackBars)) / _Point;
+      PrintFormat("[status] Spike check: move=%.0f pts over %d bars (threshold=%d)",
+                  movePoints, SpikeLookbackBars, SpikeThresholdPoints);
    }
 }
 
@@ -314,14 +331,51 @@ void CheckAlligatorSetup()
 }
 
 //+------------------------------------------------------------------+
-void OpenBuy()
+//| Fast spike-momentum entry: trade WITH a sharp, fast price move    |
+//| (independent of the Alligator trend filters — catches quick spikes)|
+//+------------------------------------------------------------------+
+void CheckSpikeEntry()
+{
+   if(!UseSpikeEntry)
+      return;
+
+   if(IsMajorNewsTime())
+      return;
+
+   datetime barTime = iTime(_Symbol, EntryTimeframe, 0);
+   if(barTime == g_lastSpikeBarTime)
+      return; // already evaluated this bar — avoid re-firing every tick
+
+   double priceNow  = iClose(_Symbol, EntryTimeframe, 0);
+   double priceBack = iClose(_Symbol, EntryTimeframe, SpikeLookbackBars);
+   if(priceBack == 0)
+      return;
+
+   double movePoints = (priceNow - priceBack) / _Point;
+
+   if(movePoints >= SpikeThresholdPoints)
+   {
+      g_lastSpikeBarTime = barTime;
+      PrintFormat("[spike] UP %.0f pts over %d bars -> BUY (momentum)", movePoints, SpikeLookbackBars);
+      OpenBuy("Spike BUY");
+   }
+   else if(movePoints <= -SpikeThresholdPoints)
+   {
+      g_lastSpikeBarTime = barTime;
+      PrintFormat("[spike] DOWN %.0f pts over %d bars -> SELL (momentum)", -movePoints, SpikeLookbackBars);
+      OpenSell("Spike SELL");
+   }
+}
+
+//+------------------------------------------------------------------+
+void OpenBuy(string comment = "Alligator BUY")
 {
    int    digits = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
    double point  = _Point;
    double ask    = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
    double sl     = NormalizeDouble(ask - StopLoss * point, digits);
 
-   if(trade.Buy(LotSize, _Symbol, ask, sl, 0, "Alligator BUY"))
+   if(trade.Buy(LotSize, _Symbol, ask, sl, 0, comment))
    {
       RegisterPosition(trade.ResultOrder());
       Print("BUY opened at ", ask);
@@ -333,14 +387,14 @@ void OpenBuy()
 }
 
 //+------------------------------------------------------------------+
-void OpenSell()
+void OpenSell(string comment = "Alligator SELL")
 {
    int    digits = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
    double point  = _Point;
    double bid    = SymbolInfoDouble(_Symbol, SYMBOL_BID);
    double sl     = NormalizeDouble(bid + StopLoss * point, digits);
 
-   if(trade.Sell(LotSize, _Symbol, bid, sl, 0, "Alligator SELL"))
+   if(trade.Sell(LotSize, _Symbol, bid, sl, 0, comment))
    {
       RegisterPosition(trade.ResultOrder());
       Print("SELL opened at ", bid);
