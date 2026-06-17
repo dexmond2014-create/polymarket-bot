@@ -25,9 +25,6 @@ input bool   RequireH4 = true;   // Require H4 Alligator trend confirmation
 input bool   RequireH1 = true;   // Require 1H Alligator trend confirmation
 input bool   RequireW1 = false;  // Require Weekly Alligator trend confirmation (very strict, often "sleeping")
 
-input bool   RequireMA = true;  // Require entry Alligator (jaw/teeth/lips) all above/below the MA
-input int    MAPeriod  = 50;    // Period of the entry-timeframe moving average (50 = faster, 200 = stricter)
-
 input bool   AllowPullbackEntry = true; // Also enter when price retraces back to the Lips/Teeth zone during a fanned Alligator
 input int    CooldownMinutes = 15; // Wait this long after a trade closes before re-checking for entries
 
@@ -37,7 +34,6 @@ int hAlligatorEntry = INVALID_HANDLE;
 int hAlligatorH1    = INVALID_HANDLE;
 int hAlligatorH4    = INVALID_HANDLE;
 int hAlligatorW1    = INVALID_HANDLE;
-int hMAEntry        = INVALID_HANDLE;
 
 struct PositionState
 {
@@ -59,11 +55,9 @@ int OnInit()
    hAlligatorH1    = iAlligator(_Symbol, PERIOD_H1, 13, 8, 8, 5, 5, 3, MODE_SMMA, PRICE_MEDIAN);
    hAlligatorH4    = iAlligator(_Symbol, PERIOD_H4, 13, 8, 8, 5, 5, 3, MODE_SMMA, PRICE_MEDIAN);
    hAlligatorW1    = iAlligator(_Symbol, PERIOD_W1, 13, 8, 8, 5, 5, 3, MODE_SMMA, PRICE_MEDIAN);
-   hMAEntry        = iMA(_Symbol, EntryTimeframe, MAPeriod, 0, MODE_SMA, PRICE_CLOSE);
 
    if(hAlligatorEntry == INVALID_HANDLE || hAlligatorH1 == INVALID_HANDLE ||
-      hAlligatorH4 == INVALID_HANDLE || hAlligatorW1 == INVALID_HANDLE ||
-      hMAEntry == INVALID_HANDLE)
+      hAlligatorH4 == INVALID_HANDLE || hAlligatorW1 == INVALID_HANDLE)
    {
       Print("Failed to create one or more Alligator/MA indicator handles");
       return INIT_FAILED;
@@ -75,7 +69,6 @@ int OnInit()
    Print("News Filter: ",   UseNewsFilter);
    Print("Max Trades: ",    MaxTrades);
    Print("Entry TF: ",      tfName);
-   Print("MA Period: ",     MAPeriod);
    Print("Two Candles: ",   RequireTwoCandles);
 
    return INIT_SUCCEEDED;
@@ -90,7 +83,6 @@ void OnDeinit(const int reason)
    if(hAlligatorH1    != INVALID_HANDLE) IndicatorRelease(hAlligatorH1);
    if(hAlligatorH4    != INVALID_HANDLE) IndicatorRelease(hAlligatorH4);
    if(hAlligatorW1    != INVALID_HANDLE) IndicatorRelease(hAlligatorW1);
-   if(hMAEntry        != INVALID_HANDLE) IndicatorRelease(hMAEntry);
    Print("=== Bot Stopped ===");
 }
 
@@ -154,22 +146,6 @@ void PrintAlligatorStatus()
    if(!upH1 && !dnH1) Print("[status] H1 Alligator: no data / no clear trend (lines not fanned)");
    if(!upH4 && !dnH4) Print("[status] H4 Alligator: no data / no clear trend (lines not fanned)");
    if(!upW1 && !dnW1) Print("[status] W1 Alligator: no data / no clear trend (lines not fanned)");
-
-   if(RequireMA)
-   {
-      double ma;
-      if(okEntry && GetMA(hMAEntry, ma))
-      {
-         bool above = (jawE > ma && teethE > ma && lipsE > ma);
-         bool below = (jawE < ma && teethE < ma && lipsE < ma);
-         PrintFormat("[status] MA%d(%s)=%.5f | Alligator above=%s below=%s",
-                     MAPeriod, tfName, ma, above ? "true" : "false", below ? "true" : "false");
-      }
-      else
-      {
-         PrintFormat("[status] MA%d(%s) data not ready yet", MAPeriod, tfName);
-      }
-   }
 
    if(RequireTwoCandles)
    {
@@ -306,19 +282,6 @@ void CheckAlligatorSetup()
    bool downtrendH4 = !RequireH4 || IsDowntrendAlligator(hAlligatorH4);
    bool downtrendW1 = !RequireW1 || IsDowntrendAlligator(hAlligatorW1);
 
-   // MA filter: all 3 Alligator lines must sit above/below the entry-TF MA
-   bool aboveMA = true;
-   bool belowMA = true;
-   if(RequireMA)
-   {
-      double ma;
-      if(!GetMA(hMAEntry, ma))
-         return;
-
-      aboveMA = (jawE > ma && teethE > ma && lipsE > ma);
-      belowMA = (jawE < ma && teethE < ma && lipsE < ma);
-   }
-
    // Two-candle confirmation
    bool bullishCandles = !RequireTwoCandles || TwoConsecutiveBullish();
    bool bearishCandles = !RequireTwoCandles || TwoConsecutiveBearish();
@@ -343,20 +306,20 @@ void CheckAlligatorSetup()
          entrySell = true;
    }
 
-   if(entryBuy && uptrendH1 && uptrendH4 && uptrendW1 && aboveMA && bullishCandles)
+   if(entryBuy && uptrendH1 && uptrendH4 && uptrendW1 && bullishCandles)
    {
       string reason = (bid > lipsE) ? "breakout" : "pullback-to-lips";
-      PrintFormat("BUY signal (%s, %s entry, MA%d aligned, 2-candle=%s)",
-                  EnumToString(EntryTimeframe), reason, MAPeriod, RequireTwoCandles ? "true" : "off");
+      PrintFormat("BUY signal (%s, %s entry, 2-candle=%s)",
+                  EnumToString(EntryTimeframe), reason, RequireTwoCandles ? "true" : "off");
       OpenBuy();
       return;
    }
 
-   if(entrySell && downtrendH1 && downtrendH4 && downtrendW1 && belowMA && bearishCandles)
+   if(entrySell && downtrendH1 && downtrendH4 && downtrendW1 && bearishCandles)
    {
       string reason = (ask < lipsE) ? "breakdown" : "pullback-to-lips";
-      PrintFormat("SELL signal (%s, %s entry, MA%d aligned, 2-candle=%s)",
-                  EnumToString(EntryTimeframe), reason, MAPeriod, RequireTwoCandles ? "true" : "off");
+      PrintFormat("SELL signal (%s, %s entry, 2-candle=%s)",
+                  EnumToString(EntryTimeframe), reason, RequireTwoCandles ? "true" : "off");
       OpenSell();
    }
 }
