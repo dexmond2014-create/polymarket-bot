@@ -22,7 +22,7 @@ input ENUM_TIMEFRAMES EntryTimeframe = PERIOD_M15; // Entry timeframe (M5 for fa
 input bool   RequireTwoCandles = false;  // Require 2 consecutive bullish/bearish closed candles before entry
 
 input bool   RequireH4 = true;   // Require H4 Alligator trend confirmation
-input bool   RequireH1 = true;   // Require 1H Alligator trend confirmation
+input bool   RequireH1 = false;  // Require 1H Alligator trend confirmation
 input bool   RequireW1 = false;  // Require Weekly Alligator trend confirmation (very strict, often "sleeping")
 
 input bool   AllowPullbackEntry = true; // Also enter when price retraces back to the Lips/Teeth zone during a fanned Alligator
