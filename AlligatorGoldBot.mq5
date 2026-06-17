@@ -19,7 +19,7 @@ input int    MagicNumber     = 123456;
 input int    MaxTrades       = 2;      // Max simultaneous open positions for this EA
 
 input ENUM_TIMEFRAMES EntryTimeframe = PERIOD_M15; // Entry timeframe (M5 for faster entries, M15 for standard)
-input bool   RequireTwoCandles = true;  // Require 2 consecutive bullish/bearish closed candles before entry
+input bool   RequireTwoCandles = false;  // Require 2 consecutive bullish/bearish closed candles before entry
 
 input bool   RequireH4 = true;   // Require H4 Alligator trend confirmation
 input bool   RequireH1 = true;   // Require 1H Alligator trend confirmation
