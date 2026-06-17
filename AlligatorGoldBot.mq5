@@ -59,7 +59,7 @@ int OnInit()
    if(hAlligatorEntry == INVALID_HANDLE || hAlligatorH1 == INVALID_HANDLE ||
       hAlligatorH4 == INVALID_HANDLE || hAlligatorW1 == INVALID_HANDLE)
    {
-      Print("Failed to create one or more Alligator/MA indicator handles");
+      Print("Failed to create one or more Alligator indicator handles");
       return INIT_FAILED;
    }
 
@@ -208,17 +208,6 @@ bool GetAlligator(int handle, double &jaw, double &teeth, double &lips, int shif
    jaw   = jawBuf[0];
    teeth = teethBuf[0];
    lips  = lipsBuf[0];
-   return true;
-}
-
-//+------------------------------------------------------------------+
-//| Read a moving average value (last closed bar)                     |
-//+------------------------------------------------------------------+
-bool GetMA(int handle, double &value, int shift = 1)
-{
-   double buf[1];
-   if(CopyBuffer(handle, 0, shift, 1, buf) <= 0) return false;
-   value = buf[0];
    return true;
 }
 
