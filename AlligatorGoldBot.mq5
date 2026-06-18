@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Claude AI"
 #property link      "https://www.mql5.com"
-#property version   "3.13"
+#property version   "3.14"
 
 #include <Trade\Trade.mqh>
 
@@ -16,7 +16,7 @@ input int    BreakevenProfit = 8000;   // Move SL to breakeven after this many p
 input int    RetraceProfit   = 2000;   // Close trade if profit retraces this many points from its peak (~$20 on 0.01 lot)
 input bool   UseNewsFilter   = false;  // Pause new entries during news hours (off — StopLoss already caps risk)
 input int    MagicNumber     = 123456;
-input int    MaxTrades       = 999;    // Max simultaneous open positions for this EA (effectively unlimited)
+input int    MaxTrades       = 2;      // Max simultaneous open positions for this EA
 
 input ENUM_TIMEFRAMES EntryTimeframe = PERIOD_M15; // Entry timeframe (M5 for faster entries, M15 for standard)
 input bool   RequireTwoCandles = false;  // Require 2 consecutive bullish/bearish closed candles before entry
