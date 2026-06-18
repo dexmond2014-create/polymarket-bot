@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Claude AI"
 #property link      "https://www.mql5.com"
-#property version   "3.10"
+#property version   "3.11"
 
 #include <Trade\Trade.mqh>
 
@@ -93,9 +93,19 @@ void OnDeinit(const int reason)
 //+------------------------------------------------------------------+
 datetime g_lastStatusTime    = 0;
 datetime g_lastTradeCloseTime = 0;
+bool     g_positionsSynced   = false;
 
 void OnTick()
 {
+   // OnInit() can run before the terminal finishes syncing open positions
+   // from the broker right after a cold start, so retry once here — by
+   // the first tick the connection is guaranteed to be fully synced.
+   if(!g_positionsSynced)
+   {
+      RebuildPositionTracking();
+      g_positionsSynced = true;
+   }
+
    ManageOpenPositions();
 
    // Print a status snapshot every 5 minutes of wall-clock time (for debugging)
@@ -374,6 +384,18 @@ void RebuildPositionTracking()
          continue;
       if(PositionGetString(POSITION_SYMBOL) != _Symbol ||
          PositionGetInteger(POSITION_MAGIC) != MagicNumber)
+         continue;
+
+      bool alreadyTracked = false;
+      for(int j = 0; j < ArraySize(g_positions); j++)
+      {
+         if(g_positions[j].ticket == ticket)
+         {
+            alreadyTracked = true;
+            break;
+         }
+      }
+      if(alreadyTracked)
          continue;
 
       long   type      = PositionGetInteger(POSITION_TYPE);
