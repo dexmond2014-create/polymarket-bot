@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Claude AI"
 #property link      "https://www.mql5.com"
-#property version   "3.09"
+#property version   "3.10"
 
 #include <Trade\Trade.mqh>
 
@@ -70,6 +70,8 @@ int OnInit()
    Print("Max Trades: ",    MaxTrades);
    Print("Entry TF: ",      tfName);
    Print("Two Candles: ",   RequireTwoCandles);
+
+   RebuildPositionTracking();
 
    return INIT_SUCCEEDED;
 }
@@ -353,6 +355,42 @@ void OpenSell()
    else
    {
       Print("SELL failed: ", trade.ResultRetcodeDescription());
+   }
+}
+
+//+------------------------------------------------------------------+
+//| Re-attach to any of this EA's positions already open on restart   |
+//| (recompile / input change / terminal restart), so breakeven and   |
+//| trailing keep working instead of forgetting about live trades.    |
+//+------------------------------------------------------------------+
+void RebuildPositionTracking()
+{
+   double point = _Point;
+
+   for(int i = 0; i < PositionsTotal(); i++)
+   {
+      ulong ticket = PositionGetTicket(i);
+      if(!PositionSelectByTicket(ticket))
+         continue;
+      if(PositionGetString(POSITION_SYMBOL) != _Symbol ||
+         PositionGetInteger(POSITION_MAGIC) != MagicNumber)
+         continue;
+
+      long   type      = PositionGetInteger(POSITION_TYPE);
+      double openPrice = PositionGetDouble(POSITION_PRICE_OPEN);
+      double bid       = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+      double ask       = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+
+      double profitPoints = (type == POSITION_TYPE_BUY) ?
+                             (bid - openPrice) / point : (openPrice - ask) / point;
+
+      int size = ArraySize(g_positions);
+      ArrayResize(g_positions, size + 1);
+      g_positions[size].ticket           = ticket;
+      g_positions[size].peakProfitPoints = MathMax(profitPoints, 0);
+      g_positions[size].breakeven        = false;
+
+      PrintFormat("Re-attached to existing position #%I64u (profit=%.1f pts)", ticket, profitPoints);
    }
 }
 
