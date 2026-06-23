@@ -46,9 +46,9 @@ input ENUM_CALC_MODE   StopCalcMode          = CALC_MODE_FACTOR; // SL calc mode
 input double           StopValue             = 1.0;              // SL value
 
 //--- Time Settings
-input int  RangeStartHour       = 0;     // Range start hour
+input int  RangeStartHour       = 6;     // Range start hour
 input int  RangeStartMinute     = 0;     // Range start minute
-input int  RangeEndHour         = 1;     // Range end hour
+input int  RangeEndHour         = 18;    // Range end hour
 input int  RangeEndMinute       = 0;     // Range end minute
 input int  DeleteOrdersHour     = 23;    // Hour unfilled pending orders expire
 input int  DeleteOrdersMinute   = 0;     // Minute unfilled pending orders expire
