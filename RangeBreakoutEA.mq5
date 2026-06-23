@@ -219,7 +219,7 @@ void UpdateRange(datetime now, MqlDateTime &dt)
    if(nowMin < endMin)
       return;
 
-   int barCount = (RangeEndHour - RangeStartHour) * 60 / PeriodSeconds(RangeTimeframe) * 60 + 100;
+   int barCount = 500;
    MqlRates rates[];
    int copied = CopyRates(_Symbol, RangeTimeframe, 0, barCount, rates);
    if(copied <= 0)
