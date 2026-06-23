@@ -219,22 +219,28 @@ void UpdateRange(datetime now, MqlDateTime &dt)
    if(nowMin < endMin)
       return;
 
-   datetime rangeStart = g_rangeDay + (RangeStartHour * 3600 + RangeStartMinute * 60);
-   datetime rangeEnd   = g_rangeDay + (RangeEndHour   * 3600 + RangeEndMinute   * 60);
-
+   int barCount = (RangeEndHour - RangeStartHour) * 60 / PeriodSeconds(RangeTimeframe) * 60 + 100;
    MqlRates rates[];
-   int copied = CopyRates(_Symbol, RangeTimeframe, rangeStart, rangeEnd, rates);
+   int copied = CopyRates(_Symbol, RangeTimeframe, 0, barCount, rates);
    if(copied <= 0)
    {
-      if(DebugMode) Print("[debug] No rate data available yet for the range window");
+      if(DebugMode) Print("[debug] No rate data available");
       return;
    }
 
-   double high = rates[0].high, low = rates[0].low;
-   for(int i = 1; i < copied; i++)
+   double high = 0, low = 1e10;
+   for(int i = 0; i < copied; i++)
    {
+      if(rates[i].time < g_rangeDay + RangeStartHour * 3600) continue;
+      if(rates[i].time >= g_rangeDay + RangeEndHour * 3600) break;
       if(rates[i].high > high) high = rates[i].high;
-      if(rates[i].low  < low)  low  = rates[i].low;
+      if(rates[i].low < low) low = rates[i].low;
+   }
+
+   if(high == 0 || low == 1e10)
+   {
+      if(DebugMode) Print("[debug] No data in range window");
+      return;
    }
 
    g_rangeHigh     = high;
