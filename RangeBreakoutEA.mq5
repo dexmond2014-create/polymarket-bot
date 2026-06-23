@@ -40,15 +40,15 @@ input double           FixedLotsPerMoney     = 1000;             // Fixed Lots P
 input double           RiskPercentOfBalance  = 1.0;              // Risk % of balance (VOLUME_PERCENT)
 input double           RiskMoney             = 100;              // Risk money (VOLUME_MONEY)
 input int              OrderBufferPoints     = 0;                // Buffer above/below range, in points
-input ENUM_CALC_MODE   TargetCalcMode        = CALC_MODE_FACTOR; // TP calc mode
-input double           TargetValue           = 1.0;              // TP value
-input ENUM_CALC_MODE   StopCalcMode          = CALC_MODE_FACTOR; // SL calc mode
-input double           StopValue             = 1.0;              // SL value
+input ENUM_CALC_MODE   TargetCalcMode        = CALC_MODE_POINTS; // TP calc mode
+input double           TargetValue           = 3000;             // TP value ($30 at 0.01 lots)
+input ENUM_CALC_MODE   StopCalcMode          = CALC_MODE_POINTS; // SL calc mode
+input double           StopValue             = 2000;             // SL value ($20 at 0.01 lots)
 
 //--- Time Settings
 input int  RangeStartHour       = 6;     // Range start hour
 input int  RangeStartMinute     = 0;     // Range start minute
-input int  RangeEndHour         = 18;    // Range end hour
+input int  RangeEndHour         = 8;     // Range end hour
 input int  RangeEndMinute       = 0;     // Range end minute
 input int  DeleteOrdersHour     = 23;    // Hour unfilled pending orders expire
 input int  DeleteOrdersMinute   = 0;     // Minute unfilled pending orders expire
@@ -66,9 +66,9 @@ input double          TSLValue            = 30;          // Distance kept behind
 input double          TSLStepValue        = 5;           // Minimum SL improvement to re-modify
 
 //--- Trading Frequency Settings
-input int MaxLongTrades  = 1; // Max buy trades per day
-input int MaxShortTrades = 1; // Max sell trades per day
-input int MaxTotalTrades = 2; // Max total trades per day
+input int MaxLongTrades  = 2; // Max buy trades per day
+input int MaxShortTrades = 2; // Max sell trades per day
+input int MaxTotalTrades = 3; // Max total trades per day
 
 //--- Range Filter Settings
 input double MinRangePoints  = 0; // Ignore ranges smaller than this (points, 0 = off)
