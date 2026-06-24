@@ -294,9 +294,22 @@ void MaintainPendingOrders(datetime now, MqlDateTime &dt)
    bool hasBuyStop  = HasPendingOrder(ORDER_TYPE_BUY_STOP);
    bool hasSellStop = HasPendingOrder(ORDER_TYPE_SELL_STOP);
 
+   if(DebugMode)
+      PrintFormat("[OCO] hasLongPos=%s hasSellStop=%s | hasShortPos=%s hasBuyStop=%s",
+                  hasLongPos ? "yes" : "no", hasSellStop ? "yes" : "no",
+                  hasShortPos ? "yes" : "no", hasBuyStop ? "yes" : "no");
+
    // Once one side fills, cancel the still-pending opposite order (OCO behaviour)
-   if(hasLongPos  && hasSellStop) DeletePendingOrdersOfType(ORDER_TYPE_SELL_STOP);
-   if(hasShortPos && hasBuyStop)  DeletePendingOrdersOfType(ORDER_TYPE_BUY_STOP);
+   if(hasLongPos  && hasSellStop)
+   {
+      if(DebugMode) Print("[OCO] BUY position filled - deleting SELL_STOP");
+      DeletePendingOrdersOfType(ORDER_TYPE_SELL_STOP);
+   }
+   if(hasShortPos && hasBuyStop)
+   {
+      if(DebugMode) Print("[OCO] SELL position filled - deleting BUY_STOP");
+      DeletePendingOrdersOfType(ORDER_TYPE_BUY_STOP);
+   }
 
    bool totalMaxed = (g_longTradesToday + g_shortTradesToday) >= MaxTotalTrades;
 
@@ -336,14 +349,27 @@ bool HasPendingOrder(ENUM_ORDER_TYPE type)
 //+------------------------------------------------------------------+
 void DeletePendingOrdersOfType(ENUM_ORDER_TYPE type)
 {
+   int count = 0;
    for(int i = OrdersTotal() - 1; i >= 0; i--)
    {
       ulong ticket = OrderGetTicket(i);
       if(ticket == 0) continue;
       if(OrderGetString(ORDER_SYMBOL) != _Symbol || OrderGetInteger(ORDER_MAGIC) != MagicNumber) continue;
       if((ENUM_ORDER_TYPE)OrderGetInteger(ORDER_TYPE) != type) continue;
-      trade.OrderDelete(ticket);
+
+      if(trade.OrderDelete(ticket))
+      {
+         count++;
+         if(DebugMode)
+            PrintFormat("[OCO] Deleted order %I64u (%s)", ticket, type == ORDER_TYPE_BUY_STOP ? "BUY_STOP" : "SELL_STOP");
+      }
+      else
+      {
+         PrintFormat("[OCO] ERROR: Failed to delete order %I64u - %s", ticket, trade.ResultRetcodeDescription());
+      }
    }
+   if(DebugMode && count > 0)
+      PrintFormat("[OCO] Deleted %d orders of type %s", count, type == ORDER_TYPE_BUY_STOP ? "BUY_STOP" : "SELL_STOP");
 }
 
 //+------------------------------------------------------------------+
