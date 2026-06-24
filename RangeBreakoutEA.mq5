@@ -45,16 +45,16 @@ input double           TargetValue           = 3000;             // TP value ($3
 input ENUM_CALC_MODE   StopCalcMode          = CALC_MODE_POINTS; // SL calc mode
 input double           StopValue             = 2000;             // SL value ($20 at 0.01 lots)
 
-//--- Time Settings
-input int  RangeStartHour       = 6;     // Range start hour
-input int  RangeStartMinute     = 0;     // Range start minute
-input int  RangeEndHour         = 8;     // Range end hour
-input int  RangeEndMinute       = 0;     // Range end minute
-input int  DeleteOrdersHour     = 23;    // Hour unfilled pending orders expire
-input int  DeleteOrdersMinute   = 0;     // Minute unfilled pending orders expire
-input bool ClosePositions       = false; // Close open positions at the close time
-input int  ClosePositionsHour   = 23;    // Hour positions are closed
-input int  ClosePositionsMinute = 30;    // Minute positions are closed
+//--- Time Settings (hardcoded)
+const int  RangeStartHour       = 6;     // Range start hour
+const int  RangeStartMinute     = 0;     // Range start minute
+const int  RangeEndHour         = 8;     // Range end hour
+const int  RangeEndMinute       = 0;     // Range end minute
+const int  DeleteOrdersHour     = 23;    // Hour unfilled pending orders expire
+const int  DeleteOrdersMinute   = 0;     // Minute unfilled pending orders expire
+const bool ClosePositions       = false; // Close open positions at the close time
+const int  ClosePositionsHour   = 23;    // Hour positions are closed
+const int  ClosePositionsMinute = 30;    // Minute positions are closed
 
 //--- Trailing Stop Settings
 input ENUM_TRAIL_MODE BEStopCalcMode    = TSL_MODE_OFF; // Break-even calc mode
@@ -102,10 +102,6 @@ int OnInit()
    ConfigureFillingMode();
 
    Print("=== Range Breakout EA Started ===");
-   PrintFormat("Range window: %02d:%02d - %02d:%02d | Delete orders: %02d:%02d | Close positions: %s %02d:%02d",
-               RangeStartHour, RangeStartMinute, RangeEndHour, RangeEndMinute,
-               DeleteOrdersHour, DeleteOrdersMinute,
-               ClosePositions ? "on" : "off", ClosePositionsHour, ClosePositionsMinute);
    PrintFormat("Max trades/day -> long=%d short=%d total=%d", MaxLongTrades, MaxShortTrades, MaxTotalTrades);
 
    return INIT_SUCCEEDED;
