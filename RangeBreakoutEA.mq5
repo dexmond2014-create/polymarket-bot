@@ -312,11 +312,12 @@ void MaintainPendingOrders(datetime now, MqlDateTime &dt)
    }
 
    bool totalMaxed = (g_longTradesToday + g_shortTradesToday) >= MaxTotalTrades;
+   bool hasAnyPos  = hasLongPos || hasShortPos;
 
-   if(!hasLongPos && !HasPendingOrder(ORDER_TYPE_BUY_STOP) && !totalMaxed && g_longTradesToday < MaxLongTrades)
+   if(!hasAnyPos && !HasPendingOrder(ORDER_TYPE_BUY_STOP) && !totalMaxed && g_longTradesToday < MaxLongTrades)
       PlaceBuyStop();
 
-   if(!hasShortPos && !HasPendingOrder(ORDER_TYPE_SELL_STOP) && !totalMaxed && g_shortTradesToday < MaxShortTrades)
+   if(!hasAnyPos && !HasPendingOrder(ORDER_TYPE_SELL_STOP) && !totalMaxed && g_shortTradesToday < MaxShortTrades)
       PlaceSellStop();
 }
 
