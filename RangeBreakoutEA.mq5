@@ -248,6 +248,8 @@ void UpdateRange(datetime now, MqlDateTime &dt)
    g_rangeComputed = true;
    g_rangeReady    = PassesRangeFilter(high - low, high);
 
+   datetime rangeStart = g_rangeDay + RangeStartHour * 3600 + RangeStartMinute * 60;
+   datetime rangeEnd = g_rangeDay + RangeEndHour * 3600 + RangeEndMinute * 60;
    DrawRangeBox(rangeStart, rangeEnd, high, low);
 
    if(DebugMode)
