@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Claude AI"
 #property link      "https://www.mql5.com"
-#property version   "1.03"
+#property version   "1.04"
 
 #include <Trade\Trade.mqh>
 
@@ -32,6 +32,7 @@ input double           Risk_Value           = 1.0;       // Risk: % of balance o
 
 input int              MagicNumber          = 123456;    // Magic Number for this EA
 input string           TradeComment         = "RSI_MA";  // Order Comment
+input bool             OnePositionPerSymbol = true;      // Only 1 open position per symbol (blocks any 2nd trade)
 
 //--- Global Variables
 CTrade trade;
@@ -181,7 +182,7 @@ void ConfigureFillingMode()
 //+------------------------------------------------------------------+
 void ExecuteBuy()
 {
-   if(HasPosition(POSITION_TYPE_BUY))
+   if(!CanOpenNewPosition())
       return;
 
    int    digits = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
@@ -200,7 +201,7 @@ void ExecuteBuy()
 //+------------------------------------------------------------------+
 void ExecuteSell()
 {
-   if(HasPosition(POSITION_TYPE_SELL))
+   if(!CanOpenNewPosition())
       return;
 
    int    digits = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
@@ -217,15 +218,44 @@ void ExecuteSell()
 }
 
 //+------------------------------------------------------------------+
-bool HasPosition(ENUM_POSITION_TYPE type)
+bool CanOpenNewPosition()
 {
+   //--- Never stack a 2nd trade on top of one this EA already has (either direction)
+   if(CountMyPositions() > 0)
+      return false;
+
+   //--- Optionally block if ANY position exists on this symbol, regardless of
+   //--- magic number - protects against orphaned trades (e.g. after changing the
+   //--- Magic Number mid-trade) and against a second instance on the same symbol.
+   if(OnePositionPerSymbol && SymbolHasAnyPosition())
+      return false;
+
+   return true;
+}
+
+//+------------------------------------------------------------------+
+int CountMyPositions()
+{
+   int count = 0;
    for(int i = 0; i < PositionsTotal(); i++)
    {
       ulong ticket = PositionGetTicket(i);
       if(!PositionSelectByTicket(ticket)) continue;
       if(PositionGetString(POSITION_SYMBOL) != _Symbol) continue;
       if(PositionGetInteger(POSITION_MAGIC) != MagicNumber) continue;
-      if(PositionGetInteger(POSITION_TYPE) == type) return true;
+      count++;
+   }
+   return count;
+}
+
+//+------------------------------------------------------------------+
+bool SymbolHasAnyPosition()
+{
+   for(int i = 0; i < PositionsTotal(); i++)
+   {
+      ulong ticket = PositionGetTicket(i);
+      if(!PositionSelectByTicket(ticket)) continue;
+      if(PositionGetString(POSITION_SYMBOL) == _Symbol) return true;
    }
    return false;
 }
