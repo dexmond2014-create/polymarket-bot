@@ -5,26 +5,26 @@
 //+------------------------------------------------------------------+
 #property copyright "Claude AI"
 #property link      "https://www.mql5.com"
-#property version   "1.01"
+#property version   "1.02"
 
 #include <Trade\Trade.mqh>
 
 //--- Input Parameters
-input int              RSI_Period           = 14;        // RSI Period
-input ENUM_TIMEFRAMES  RSI_Timeframe        = PERIOD_H1; // RSI Timeframe
-input double           RSI_Buy_Threshold    = 30;        // RSI Buy Threshold (< this = buy signal)
-input double           RSI_Sell_Threshold   = 70;        // RSI Sell Threshold (> this = sell signal)
+input int              RSI_Period           = 9;         // RSI Period
+input ENUM_TIMEFRAMES  RSI_Timeframe        = PERIOD_M15;// RSI Timeframe
+input double           RSI_Buy_Threshold    = 35;        // RSI Buy Threshold (< this = buy signal)
+input double           RSI_Sell_Threshold   = 65;        // RSI Sell Threshold (> this = sell signal)
 
 input bool             MA_Filter_On         = true;      // Enable Moving Average Filter
 input int              MA_Period            = 50;        // MA Period
-input ENUM_TIMEFRAMES  MA_Timeframe         = PERIOD_D1; // MA Timeframe
+input ENUM_TIMEFRAMES  MA_Timeframe         = PERIOD_H4; // MA Timeframe
 input ENUM_MA_METHOD   MA_Type              = MODE_SMA;  // MA Type
 
-input double           SL_Percent           = 5.0;       // Stop Loss % of open price (0 = no SL)
-input double           TP_Percent           = 1.0;       // Take Profit % of open price (0 = no TP)
+input double           SL_Percent           = 1.0;       // Stop Loss % of open price (0 = no SL)
+input double           TP_Percent           = 0.75;      // Take Profit % of open price (0 = no TP)
 
-input double           TSL_Trigger_Percent  = 0.05;      // Trailing Stop Trigger % of profit (0 = off)
-input double           TSL_Distance_Percent = 0.1;       // Trailing Stop Distance %
+input double           TSL_Trigger_Percent  = 0.3;       // Trailing Stop Trigger % of profit (0 = off)
+input double           TSL_Distance_Percent = 0.2;       // Trailing Stop Distance %
 input double           TSL_Step_Percent     = 0.05;      // Trailing Stop Step %
 
 input bool             Risk_Type_IsPercent  = true;      // Risk Type: true=% of balance, false=fixed money
