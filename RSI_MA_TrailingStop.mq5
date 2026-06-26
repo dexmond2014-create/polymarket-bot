@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Claude AI"
 #property link      "https://www.mql5.com"
-#property version   "1.02"
+#property version   "1.03"
 
 #include <Trade\Trade.mqh>
 
@@ -20,12 +20,12 @@ input int              MA_Period            = 50;        // MA Period
 input ENUM_TIMEFRAMES  MA_Timeframe         = PERIOD_H4; // MA Timeframe
 input ENUM_MA_METHOD   MA_Type              = MODE_SMA;  // MA Type
 
-input double           SL_Percent           = 1.0;       // Stop Loss % of open price (0 = no SL)
-input double           TP_Percent           = 0.75;      // Take Profit % of open price (0 = no TP)
+input double           SL_Percent           = 2.0;       // Stop Loss % of open price (0 = no SL)
+input double           TP_Percent           = 3.0;       // Take Profit % of open price (0 = no TP)
 
-input double           TSL_Trigger_Percent  = 0.3;       // Trailing Stop Trigger % of profit (0 = off)
-input double           TSL_Distance_Percent = 0.2;       // Trailing Stop Distance %
-input double           TSL_Step_Percent     = 0.05;      // Trailing Stop Step %
+input double           TSL_Trigger_Percent  = 0.5;       // Trailing Stop Trigger % of profit (0 = off)
+input double           TSL_Distance_Percent = 0.4;       // Trailing Stop Distance %
+input double           TSL_Step_Percent     = 0.1;       // Trailing Stop Step %
 
 input bool             Risk_Type_IsPercent  = true;      // Risk Type: true=% of balance, false=fixed money
 input double           Risk_Value           = 1.0;       // Risk: % of balance or fixed money amount
