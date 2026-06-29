@@ -1,10 +1,10 @@
 //+------------------------------------------------------------------+
-//|                                          ATR_CandleBreakout.mq5  |
+//|                                      ATR_CandleBreakout_EUR.mq5  |
 //|              ATR Candle Breakout EA  -  MT5 (MQL5) Only          |
 //|  Large-candle breakout vs ATR, with optional trend / MTF-ATR /   |
 //|  time-of-day / support-resistance filters and risk-based sizing. |
-//|  Default inputs below are tuned as a STARTING POINT for GOLD     |
-//|  (XAUUSD). For EURUSD use the ATR_CandleBreakout_EUR.mq5 build.  |
+//|  Default inputs below are tuned as a STARTING POINT for EURUSD.  |
+//|  For GOLD (XAUUSD) use the ATR_CandleBreakout.mq5 build instead. |
 //+------------------------------------------------------------------+
 #property copyright "Claude AI"
 #property link      "https://www.mql5.com"
@@ -46,19 +46,19 @@ input double           SR_Zone_ATR          = 0.5;        // S/R zone width (x A
 input int              SR_Min_Touches       = 2;          // Min touches to confirm S/R level
 
 //==================== RISK MANAGEMENT ============================
-input double           SL_Percent           = 0.6;        // Stop Loss (% of open price)
-input double           TP_Percent           = 1.2;        // Take Profit (% of open price)
+input double           SL_Percent           = 0.2;        // Stop Loss (% of open price)
+input double           TP_Percent           = 0.4;        // Take Profit (% of open price)
 input double           Risk_Money           = 5.0;        // Risk per trade (fixed money amount)
 
 //==================== TRAILING STOP =============================
 input bool             Use_Trailing         = true;       // Enable trailing stop
-input double           Trail_Activate_Pct   = 0.4;        // Activate after profit reaches (% of price)
-input double           Trail_Step_Pct       = 0.3;        // Trailing step (% of price)
+input double           Trail_Activate_Pct   = 0.15;       // Activate after profit reaches (% of price)
+input double           Trail_Step_Pct       = 0.1;        // Trailing step (% of price)
 
 //==================== GENERAL ==================================
-input int              MagicNumber          = 222222;     // Magic Number
+input int              MagicNumber          = 222223;     // Magic Number (different from Gold build)
 input int              Slippage             = 20;         // Slippage (points)
-input bool             OnePositionPerSymbol = false;      // Only 1 open position per symbol (false = coexist w/ other EA on XAUUSD)
+input bool             OnePositionPerSymbol = true;       // Only 1 open position per symbol
 input string           TradeComment         = "ATR_Breakout"; // Order comment
 
 //==================== GLOBALS =================================
@@ -104,7 +104,7 @@ int OnInit()
 
    g_lastBarTime = iTime(_Symbol, Signal_TF, 0);
 
-   Print("=== ATR Candle Breakout EA Started ===");
+   Print("=== ATR Candle Breakout EA (EUR build) Started ===");
    PrintFormat("Signal TF=%s ATR(%d)x%.2f | Trend=%s MTF_ATR=%s Time=%s S/R=%s | Risk=%.2f SL=%.2f%% TP=%.2f%%",
                EnumToString(Signal_TF), ATR_Period, ATR_Multiplier,
                Use_Trend_Filter ? "on" : "off", Use_MTF_ATR ? "on" : "off",
@@ -120,7 +120,7 @@ void OnDeinit(const int reason)
    if(atr_handle     != INVALID_HANDLE) IndicatorRelease(atr_handle);
    if(trend_handle   != INVALID_HANDLE) IndicatorRelease(trend_handle);
    if(htf_atr_handle != INVALID_HANDLE) IndicatorRelease(htf_atr_handle);
-   Print("=== ATR Candle Breakout EA Stopped ===");
+   Print("=== ATR Candle Breakout EA (EUR build) Stopped ===");
 }
 
 //+------------------------------------------------------------------+
