@@ -8,7 +8,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Claude AI"
 #property link      "https://www.mql5.com"
-#property version   "1.01"
+#property version   "1.02"
 
 #include <Trade\Trade.mqh>
 
@@ -59,6 +59,7 @@ input double           Trail_Step_Pct       = 0.1;        // Trailing step (% of
 input int              MagicNumber          = 222223;     // Magic Number (different from Gold build)
 input int              Slippage             = 20;         // Slippage (points)
 input bool             OnePositionPerSymbol = true;       // Only 1 open position per symbol
+input int              Max_Trades_Per_Day   = 4;          // Max trades per day per symbol (0 = no limit)
 input string           TradeComment         = "ATR_Breakout"; // Order comment
 
 //==================== GLOBALS =================================
@@ -420,7 +421,47 @@ bool CanOpenNewPosition()
    if(OnePositionPerSymbol && SymbolHasAnyPosition())
       return false;
 
+   //--- Daily trade cap (counted from broker history => restart-safe)
+   if(Max_Trades_Per_Day > 0 && CountTradesToday() >= Max_Trades_Per_Day)
+      return false;
+
    return true;
+}
+
+//+------------------------------------------------------------------+
+//| Count this EA's trades opened today (per symbol + magic).        |
+//| Reads from deal history so an EA/terminal restart never loses    |
+//| the count, and it resets automatically at the start of each day. |
+//+------------------------------------------------------------------+
+int CountTradesToday()
+{
+   datetime dayStart = StartOfDay(TimeCurrent());
+   if(!HistorySelect(dayStart, TimeCurrent() + 1))
+      return 0;
+
+   int count = 0;
+   int deals = HistoryDealsTotal();
+   for(int i = 0; i < deals; i++)
+   {
+      ulong ticket = HistoryDealGetTicket(i);
+      if(ticket == 0) continue;
+      if(HistoryDealGetString(ticket, DEAL_SYMBOL) != _Symbol) continue;
+      if(HistoryDealGetInteger(ticket, DEAL_MAGIC) != MagicNumber) continue;
+      if(HistoryDealGetInteger(ticket, DEAL_ENTRY) != DEAL_ENTRY_IN) continue;  // count only entries
+      count++;
+   }
+   return count;
+}
+
+//+------------------------------------------------------------------+
+datetime StartOfDay(datetime t)
+{
+   MqlDateTime dt;
+   TimeToStruct(t, dt);
+   dt.hour = 0;
+   dt.min  = 0;
+   dt.sec  = 0;
+   return StructToTime(dt);
 }
 
 //+------------------------------------------------------------------+
