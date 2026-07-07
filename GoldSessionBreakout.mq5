@@ -14,7 +14,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Claude AI"
 #property link      "https://www.mql5.com"
-#property version   "1.00"
+#property version   "1.01"
 
 #include <Trade\Trade.mqh>
 
@@ -53,6 +53,11 @@ input double           BE_Trigger_ATR       = 1.0;        // Breakeven after pro
 input bool             Use_Trailing         = true;       // Trail SL after further profit
 input double           Trail_Trigger_ATR    = 1.5;        // Start trailing after profit >= this x ATR
 input double           Trail_Dist_ATR       = 1.0;        // Keep SL this x ATR behind price
+
+//==================== SMART PARTIAL TAKE-PROFIT ==================
+input bool             Use_Partial_TP       = true;       // Bank part of the position at a first target
+input double           Partial_TP_ATR       = 1.5;        // First target distance = this x ATR (1.5 = 1R)
+input double           Partial_TP_Percent   = 50.0;       // % of the position to close at first target
 
 //==================== GENERAL ====================================
 input int              MagicNumber          = 333333;     // Magic Number
@@ -256,8 +261,11 @@ double CalculateLotSize(double slDistPrice)
 //+------------------------------------------------------------------+
 void ManageOpenTrades()
 {
-   if(!Use_Breakeven && !Use_Trailing)
+   if(!Use_Breakeven && !Use_Trailing && !Use_Partial_TP)
+   {
+      CleanupPartialFlagsIfFlat();
       return;
+   }
 
    double atr = GetATR();
    if(atr <= 0)
@@ -276,12 +284,21 @@ void ManageOpenTrades()
       double openPrice = PositionGetDouble(POSITION_PRICE_OPEN);
       double curSL     = PositionGetDouble(POSITION_SL);
       double curTP     = PositionGetDouble(POSITION_TP);
+      double volume    = PositionGetDouble(POSITION_VOLUME);
       bool   isBuy     = (type == POSITION_TYPE_BUY);
 
       double price  = isBuy ? SymbolInfoDouble(_Symbol, SYMBOL_BID)
                             : SymbolInfoDouble(_Symbol, SYMBOL_ASK);
       double profit = isBuy ? (price - openPrice) : (openPrice - price);
 
+      //--- Smart partial take-profit: once the breakout has clearly worked
+      //--- (reached the first target), bank part of the position and let the
+      //--- rest ride to the full TP / trailing stop. Breakeven has already
+      //--- locked the runner risk-free by this point.
+      if(Use_Partial_TP && profit >= Partial_TP_ATR * atr && !PartialDone(ticket))
+         TakePartial(ticket, volume);
+
+      //--- Breakeven + trailing on whatever is left running
       if(isBuy)
       {
          double desired = curSL;   // want to raise SL
@@ -310,6 +327,78 @@ void ManageOpenTrades()
                trade.PositionModify(ticket, desired, curTP);
          }
       }
+   }
+
+   CleanupPartialFlagsIfFlat();
+}
+
+//+------------------------------------------------------------------+
+//| Close part of a position at the first target. Only splits when   |
+//| both the closed part and the remainder are >= the minimum lot.   |
+//| A "partial done" flag is stored in a terminal Global Variable    |
+//| (keyed by magic+ticket) so it survives restarts and never fires  |
+//| twice on the same trade.                                         |
+//+------------------------------------------------------------------+
+void TakePartial(ulong ticket, double volume)
+{
+   double step = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
+   double minL = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
+
+   double closeVol = volume * Partial_TP_Percent / 100.0;
+   closeVol = MathFloor(closeVol / step) * step;
+   closeVol = NormalizeDouble(closeVol, 2);
+   double remainder = NormalizeDouble(volume - closeVol, 2);
+
+   if(closeVol >= minL && remainder >= minL)
+   {
+      if(trade.PositionClosePartial(ticket, closeVol))
+      {
+         MarkPartialDone(ticket);
+         PrintFormat("[PartialTP] Banked %.2f lots of ticket %I64u, %.2f left to run",
+                     closeVol, ticket, remainder);
+      }
+   }
+   else
+   {
+      //--- Position too small to split (e.g. minimum lot): can't take a
+      //--- partial, so mark it done and let it ride to the full TP / trail.
+      MarkPartialDone(ticket);
+   }
+}
+
+//+------------------------------------------------------------------+
+//| Partial-TP flag helpers (terminal Global Variables)              |
+//+------------------------------------------------------------------+
+string PartialGVName(ulong ticket)
+{
+   return StringFormat("GSB_PT_%d_%I64u", MagicNumber, ticket);
+}
+
+bool PartialDone(ulong ticket)
+{
+   return GlobalVariableCheck(PartialGVName(ticket));
+}
+
+void MarkPartialDone(ulong ticket)
+{
+   GlobalVariableSet(PartialGVName(ticket), 1.0);
+}
+
+//+------------------------------------------------------------------+
+//| When no positions are open, all partial flags are stale - clear  |
+//| them so Global Variables don't accumulate over time.             |
+//+------------------------------------------------------------------+
+void CleanupPartialFlagsIfFlat()
+{
+   if(CountMyPositions() > 0)
+      return;
+
+   string prefix = StringFormat("GSB_PT_%d_", MagicNumber);
+   for(int i = GlobalVariablesTotal() - 1; i >= 0; i--)
+   {
+      string name = GlobalVariableName(i);
+      if(StringFind(name, prefix) == 0)
+         GlobalVariableDel(name);
    }
 }
 
