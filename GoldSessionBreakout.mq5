@@ -14,7 +14,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Claude AI"
 #property link      "https://www.mql5.com"
-#property version   "1.01"
+#property version   "1.02"
 
 #include <Trade\Trade.mqh>
 
@@ -371,7 +371,7 @@ void TakePartial(ulong ticket, double volume)
 //+------------------------------------------------------------------+
 string PartialGVName(ulong ticket)
 {
-   return StringFormat("GSB_PT_%d_%I64u", MagicNumber, ticket);
+   return StringFormat("GSB_PT_%d_%s_%I64u", MagicNumber, _Symbol, ticket);
 }
 
 bool PartialDone(ulong ticket)
@@ -393,7 +393,7 @@ void CleanupPartialFlagsIfFlat()
    if(CountMyPositions() > 0)
       return;
 
-   string prefix = StringFormat("GSB_PT_%d_", MagicNumber);
+   string prefix = StringFormat("GSB_PT_%d_%s_", MagicNumber, _Symbol);
    for(int i = GlobalVariablesTotal() - 1; i >= 0; i--)
    {
       string name = GlobalVariableName(i);
