@@ -28,6 +28,14 @@ STOP_LOSS_PCT    = 0.02           # -2% stop loss
 DAILY_LOSS_LIMIT = 30.0           # Stop if lost $30 today
 MAX_OPEN_TRADES  = 3              # Max simultaneous trades
 DIP_TRIGGER_PCT  = 0.008          # Buy when price dips 0.8%
+
+# Alligator indicator (Bill Williams) — confirms dip-buys with a bullish trend
+USE_ALLIGATOR_FILTER = True
+ALLIGATOR_JAW_PERIOD,   ALLIGATOR_JAW_SHIFT   = 13, 8
+ALLIGATOR_TEETH_PERIOD, ALLIGATOR_TEETH_SHIFT = 8, 5
+ALLIGATOR_LIPS_PERIOD,  ALLIGATOR_LIPS_SHIFT  = 5, 3
+PRICE_HISTORY_LEN = 30            # >= jaw period + jaw shift, with margin
+
 POLL_INTERVAL    = 60             # Check every 60 seconds
 TRADE_START_H    = 8              # Start 8am UTC
 TRADE_END_H      = 22             # Stop 10pm UTC
@@ -81,6 +89,28 @@ def get_daily_loss():
         if t.get("ts", "")[:10] == today
         and t.get("profit_usd", 0) < 0
     )
+
+# ── Alligator indicator (Bill Williams) ─────────────────────────────────────────
+
+def smma_last(values, period):
+    """Most recent Smoothed Moving Average (SMMA) value for a price series."""
+    if len(values) < period:
+        return None
+    smma = sum(values[:period]) / period
+    for price in values[period:]:
+        smma = (smma * (period - 1) + price) / period
+    return smma
+
+def calculate_alligator(prices):
+    """Bill Williams Alligator: returns (jaw, teeth, lips) or (None, None, None)."""
+    jaw = teeth = lips = None
+    if len(prices) > ALLIGATOR_JAW_SHIFT:
+        jaw = smma_last(prices[:-ALLIGATOR_JAW_SHIFT], ALLIGATOR_JAW_PERIOD)
+    if len(prices) > ALLIGATOR_TEETH_SHIFT:
+        teeth = smma_last(prices[:-ALLIGATOR_TEETH_SHIFT], ALLIGATOR_TEETH_PERIOD)
+    if len(prices) > ALLIGATOR_LIPS_SHIFT:
+        lips = smma_last(prices[:-ALLIGATOR_LIPS_SHIFT], ALLIGATOR_LIPS_PERIOD)
+    return jaw, teeth, lips
 
 # ── News filter ───────────────────────────────────────────────────────────────
 
@@ -260,6 +290,7 @@ async def main_async():
     print(f"  Max trades:    {MAX_OPEN_TRADES}")
     print(f"  Hours:         {TRADE_START_H}:00-{TRADE_END_H}:00 UTC")
     print(f"  News filter:   ±{NEWS_PAUSE_BEFORE} min around events")
+    print(f"  Alligator:     {'ON — bullish fan required for dip-buys' if USE_ALLIGATOR_FILTER else 'off'}")
     print("=" * 55)
 
     recent_prices = []
@@ -299,9 +330,9 @@ async def main_async():
 
                     print(f"\n[{now_iso()[:16]}] XAU=${price:.2f} | Open: {len(open_trades)}/{MAX_OPEN_TRADES} | Loss: ${daily_loss:.2f}/${DAILY_LOSS_LIMIT}")
 
-                    # Track prices for dip detection
+                    # Track prices for dip detection and Alligator
                     recent_prices.append(price)
-                    if len(recent_prices) > 20:
+                    if len(recent_prices) > PRICE_HISTORY_LEN:
                         recent_prices.pop(0)
 
                     # Safety checks
@@ -327,14 +358,32 @@ async def main_async():
                         await asyncio.sleep(POLL_INTERVAL)
                         continue
 
+                    # Alligator trend filter
+                    jaw, teeth, lips = calculate_alligator(recent_prices)
+                    bullish = (
+                        jaw is not None and teeth is not None and lips is not None
+                        and lips > teeth > jaw and price > lips
+                    )
+                    if jaw is None or teeth is None or lips is None:
+                        alligator_str = "warming up"
+                    else:
+                        alligator_str = f"jaw={jaw:.2f} teeth={teeth:.2f} lips={lips:.2f} bullish={bullish}"
+                    print(f"  [alligator] {alligator_str}")
+
                     # Dip detection
                     if len(recent_prices) >= 5:
                         recent_high = max(recent_prices[-10:]) if len(recent_prices) >= 10 else max(recent_prices)
                         dip_pct = (recent_high - price) / recent_high
 
                         if dip_pct >= DIP_TRIGGER_PCT:
-                            print(f"  📉 Dip -{dip_pct*100:.2f}% from ${recent_high:.2f} — buying!")
-                            await buy_gold(ws, price, f"dip_{dip_pct*100:.1f}pct")
+                            if not USE_ALLIGATOR_FILTER or bullish:
+                                reason = f"dip_{dip_pct*100:.1f}pct"
+                                if USE_ALLIGATOR_FILTER:
+                                    reason += "_alligator"
+                                print(f"  📉 Dip -{dip_pct*100:.2f}% from ${recent_high:.2f} — buying!")
+                                await buy_gold(ws, price, reason)
+                            else:
+                                print(f"  📉 Dip -{dip_pct*100:.2f}% from ${recent_high:.2f} but Alligator not bullish — skipping")
                         else:
                             print(f"  [watch] High=${recent_high:.2f} dip={dip_pct*100:.2f}% (need {DIP_TRIGGER_PCT*100:.1f}%)")
 
